@@ -1,22 +1,10 @@
 # OSN Course Project — Distributed Compute Cluster
 
-Current work: **Member 1's foundation for the 26–27 October tasks**, implemented on 27 October 2026. The full assignment is not implemented yet.
-
-## What works so far
-
-- Job and worker records, including all assignment state names.
-- Linked-list registries, unique IDs and input validation.
-- Bounded admission of 1024 pending jobs with `QUEUE_FULL`.
-- Explicit start/finish operations and accounting for cores, RAM and GPUs.
-- Execution IDs that reject stale results, and duplicate-result protection.
-- Worker availability checks and guarded state changes.
-- Interactive core driver and automated boundary/accounting tests.
-
-There are no hash functions or hash tables in this implementation. Registries use linked lists with linear lookup.
+C foundations for a distributed compute cluster. Current code contains a scheduler registry/lifecycle library and a local worker process runner. The full networked scheduler, worker and client are still in progress.
 
 ## Build and test
 
-Use a C11 compiler, Make and Python 3 in Linux, WSL Ubuntu, or macOS. Python is only for a driver test; the core itself is C.
+Linux/WSL or macOS with a C11 compiler, Make and Python 3 for tests:
 
 ```sh
 make
@@ -24,58 +12,56 @@ make test
 make sanitize
 ```
 
-`make sanitize` does a clean rebuild with AddressSanitizer and UndefinedBehaviorSanitizer and runs the same tests. Sanitizer support depends on the compiler/runtime.
+Sanitizer builds replace the normal objects. Run `make clean` then `make` for a normal build afterwards. Linux/WSL normal-user and root worker tests have passed. macOS code is present but has not been verified here.
 
-From PowerShell in this Windows folder:
+## Project files
 
-```powershell
-wsl -d Ubuntu --cd '/mnt/c/Users/Aryan/Desktop/OSN Course Project' --exec make test
-wsl -d Ubuntu --cd '/mnt/c/Users/Aryan/Desktop/OSN Course Project' --exec ./build/scheduler_demo
-```
+| Location | Purpose |
+|---|---|
+| `include/model.h` | Shared jobs, resources, states and registry records |
+| `include/scheduler.h`, `src/scheduler/` | Scheduler registry, validation and basic lifecycle/accounting |
+| `include/runner.h`, `src/worker/` | Actual process execution, limits, output, usage sampling and cleanup |
+| `Makefile` | Library, development-driver and test builds |
+| `tools/` | Standalone development drivers; not the final production CLIs |
+| `tests/` | API/driver checks and controlled workload programs |
+| `docs/scheduler-core.md` | Scheduler API contracts and current limitations |
+| `docs/worker-runner.md` | Runner API, final-repo file list and integration notes |
 
-If you ran the sanitizer target and want a normal build again, run `make clean` followed by `make test`.
+Registries use linked lists. No hash functions or hash tables are used in the current logic. Comments in C are practical Hinglish notes.
 
-## Try the scheduler core
+## Scheduler core driver
 
 ```sh
 ./build/scheduler_demo
 ```
 
-The driver accepts your own commands repeatedly. For example:
+Example commands:
 
 ```text
 worker 4 2048 1
 submit aryan ./hello 2 512 10 2 1
-submit kaush ls 1 128 5 3
-nodes
 start 1 1001
 status 1
 finish 1 1 COMPLETED
-cancel 2
 nodes
 quit
 ```
 
-`start` prints the execution ID; use that ID with `finish`. IDs start from 1 for jobs and 1001 for workers in each new driver session. RAM values are MB. Run `help` for the complete driver commands.
+This driver changes records only. It does not execute a program, transfer files or open sockets. `help` lists its commands.
 
-**This driver only changes in-memory records.** It does not open sockets, read/transfer the executable, run programs, or verify that a path exists. Its `finish` command simulates a confirmed worker result, and `worker-state` simulates a state transition. Paths in this driver cannot contain spaces. This is not the assignment's final scheduler/client CLI.
+## Local worker runner
 
-## File ownership
+```sh
+make all build/test_job
+./build/worker_runner -- ./build/test_job hello
+./build/worker_runner -time 1 -- ./build/test_job sleep 5000
+./build/worker_runner -- printf path-command-ok
+```
 
-| Files | Purpose |
-|---|---|
-| `include/model.h` | Shared job/worker/resource data model |
-| `include/scheduler.h` | Member 1 core API and error codes |
-| `src/scheduler/registry.c` | Record creation, lookup, validation and memory cleanup |
-| `src/scheduler/lifecycle.c` | State rules, basic start/finish/cancel and resource accounting |
-| `tools/scheduler_demo.c` | Interactive standalone driver for the core |
-| `tests/test_scheduler.c` | Unit tests with selectable test groups |
-| `tests/test_demo.py` | Driver tests with multiple command/input sequences |
+The runner forks/execs a real job in its own directory, captures both output streams, applies limits, enforces timeout and reaps it. Under sudo/root it drops the job to `nobody`; otherwise it warns. The driver renders captured output for inspection. The library delivers output to a callback for future network integration.
 
-The Makefile builds a core library and driver only. Member 3 can extend it with the final scheduler, worker and client targets when transport integration is ready; there are no placeholder worker/client executables.
+## Remaining integration
 
-## What comes next
+Scheduler policies, network dispatch and recovery are pending. Worker discovery/registration, heartbeats, draining, cache and checkpoints are pending. The two libraries are not yet connected through a production transport. See the API notes before integrating with the team's shared headers and Makefile.
 
-The next Member 1 task is the scheduler event loop and service boundaries. FIFO/PRIORITY/aging, dispatch-in-progress reservations, automatic heartbeat handling, retries, dependencies, quotas, preemption and migration remain to be implemented. Worker execution belongs to the separate worker workstream. A live TCP scheduler cannot be claimed complete based on this foundation.
-
-See `docs/member1-foundation.md` for API contracts and integration notes, `docs/progress.md` for actual progress, and `IMPLEMENTATION_PLAN.md` for the original requirements and full baseline schedule.
+Build artifacts, local planning notes and question screenshots are excluded from the current source tree's tracked project files. The final submission needs the completed three-program source/build setup; these foundations alone are not the full assignment.
