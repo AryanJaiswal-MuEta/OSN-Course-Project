@@ -7,3 +7,10 @@ core
 .DS_Store
 .vscode/
 .idea/
+Questions/
+.local-notes/
+/scheduler
+/worker
+/client
+/cache/
+*.log

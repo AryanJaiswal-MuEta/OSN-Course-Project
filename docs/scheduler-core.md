@@ -1,4 +1,4 @@
-# Member 1: 26–27 October foundation
+# Scheduler core foundation
 
 ## Planned tasks and actual delivery
 
@@ -63,4 +63,4 @@ Individual groups are runnable, for example:
 ./build/test_scheduler capacity
 ```
 
-Actual Linux/WSL results are recorded in `progress.md`. macOS has not been tested in this workspace. None of these tests claim to validate socket concurrency, actual signals/limits, retries or distributed execution.
+The scheduler tests pass on WSL Ubuntu, including address/undefined-behavior sanitizer runs. macOS has not been tested in this workspace. These scheduler tests do not validate socket concurrency, actual process signals/limits, retries or distributed execution; separate worker tests exercise local process behavior.
