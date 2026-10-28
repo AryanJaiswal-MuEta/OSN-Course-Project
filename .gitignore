@@ -14,3 +14,6 @@ Questions/
 /client
 /cache/
 *.log
+Doxyfile
+Doxyfile.bak
+docs/generated/build/
