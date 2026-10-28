@@ -2,6 +2,8 @@
 
 This is Member 2's local process-execution layer. It runs actual programs, but it is not yet the networked `worker` executable required by the assignment.
 
+The worker-loop wrapper is now available; see `worker-loop.md` for output/result callback handling, readiness hooks and the interactive multi-job driver.
+
 ## Files to bring into the final team repository
 
 ```text

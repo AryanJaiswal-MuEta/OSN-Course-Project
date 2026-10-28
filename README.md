@@ -22,12 +22,14 @@ Sanitizer builds replace the normal objects. Run `make clean` then `make` for a 
 | `include/scheduler.h`, `src/scheduler/` | Scheduler registry, validation and basic lifecycle/accounting |
 | `include/scheduler_loop.h`, `include/scheduler_service.h` | Nonblocking poll loop and admission/status/nodes service boundary |
 | `include/runner.h`, `src/worker/` | Actual process execution, limits, output, usage sampling and cleanup |
+| `include/worker_loop.h`, `src/worker/loop.c` | Worker I/O/timer skeleton and output/result callback integration |
 | `Makefile` | Library, development-driver and test builds |
 | `tools/` | Standalone development drivers; not the final production CLIs |
 | `tests/` | API/driver checks and controlled workload programs |
 | `docs/scheduler-core.md` | Scheduler API contracts and current limitations |
 | `docs/scheduler-loop.md` | Loop callbacks, snapshot/query APIs and transport/logger integration |
 | `docs/worker-runner.md` | Runner API, final-repo file list and integration notes |
+| `docs/worker-loop.md` | Worker loop hooks, acknowledgement boundaries and multi-job console |
 
 Registries use linked lists. No hash functions or hash tables are used in the current logic. Comments in C are practical Hinglish notes.
 
@@ -62,8 +64,10 @@ make all build/test_job
 
 The runner forks/execs a real job in its own directory, captures both output streams, applies limits, enforces timeout and reaps it. Under sudo/root it drops the job to `nobody`; otherwise it warns. The driver renders captured output for inspection. The library delivers output to a callback for future network integration.
 
+For the worker-loop development console, run `./build/worker_loop_demo`. Use `run <job_id> <run_id> <ram_MB> <time_s> <program> [args...]`, `jobs`, `cancel <job_id> <run_id>` and `quit`. Multiple jobs can run while commands are handled. EOF waits for completed results; quit/Ctrl+C aborts. This is not the final network worker CLI.
+
 ## Remaining integration
 
-The 28 October Member 1 work adds a reusable poll loop, periodic/event-triggered scheduling hooks, submission logging hooks and pointer-free query snapshots. The teammate's shared protocol/network skeleton is preserved; its transport implementation is still pending. Scheduler policies, listener integration, network dispatch and recovery are pending. Worker discovery/registration, heartbeats, draining, cache and checkpoints are pending. The two libraries are not yet connected through a production transport. See the API notes before integrating with the team's shared headers and Makefile.
+The 28 October Member 1 work adds a reusable poll loop, periodic/event-triggered scheduling hooks, submission logging hooks and pointer-free query snapshots. Member 2's 28 October slice, implemented on 29 October, wraps the local runner in a poll loop with output/result retry hooks. The teammate's shared protocol/network skeleton is preserved; its transport implementation is still pending. Scheduler policies, listener integration, network dispatch and recovery are pending. Worker discovery/registration, heartbeats, draining, cache and checkpoints are pending. The two libraries are not yet connected through a production transport. See the API notes before integrating with the team's shared headers and Makefile.
 
 Build artifacts, local planning notes and question screenshots are excluded from the current source tree's tracked project files. The final submission needs the completed three-program source/build setup; these foundations alone are not the full assignment.
