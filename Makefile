@@ -4,8 +4,8 @@ CPPFLAGS = -Iinclude -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOU
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -Werror -g
 LDFLAGS =
 
-CORE = build/registry.o build/lifecycle.o
-HEADERS = include/model.h include/scheduler.h
+CORE = build/registry.o build/lifecycle.o build/loop.o build/service.o
+HEADERS = include/model.h include/scheduler.h include/scheduler_loop.h include/scheduler_service.h
 RUNNER = build/worker_runner.o build/worker_files.o build/worker_platform.o
 RUN_HEADERS = include/model.h include/runner.h src/worker/internal.h
 
@@ -44,8 +44,16 @@ build/scheduler_demo: tools/scheduler_demo.c build/libscheduler.a $(HEADERS)
 build/test_scheduler: tests/test_scheduler.c build/libscheduler.a $(HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(LDFLAGS) -o $@
 
-test: build/test_scheduler build/scheduler_demo build/test_runner build/worker_runner build/test_job
+build/test_loop: tests/test_loop.c build/libscheduler.a $(HEADERS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(LDFLAGS) -o $@
+
+build/test_service: tests/test_service.c build/libscheduler.a $(HEADERS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(LDFLAGS) -o $@
+
+test: build/test_scheduler build/scheduler_demo build/test_runner build/worker_runner build/test_job build/test_loop build/test_service
 	./build/test_scheduler
+	./build/test_loop
+	./build/test_service
 	python3 tests/test_demo.py ./build/scheduler_demo
 	./build/test_runner ./build/test_job
 	python3 tests/test_runner.py ./build/worker_runner ./build/test_job

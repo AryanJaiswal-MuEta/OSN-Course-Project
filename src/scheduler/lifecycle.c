@@ -14,6 +14,7 @@ const char *sched_error(int err)
     case S_STALE_RUN: return "result belongs to an older execution";
     case S_BUSY: return "worker still has active jobs";
     case S_ID_LIMIT: return "ID range exhausted";
+    case S_BUFFER_SMALL: return "query buffer too small";
     default: return "unknown error";
     }
 }
