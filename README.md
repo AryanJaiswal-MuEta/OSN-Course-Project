@@ -20,11 +20,13 @@ Sanitizer builds replace the normal objects. Run `make clean` then `make` for a 
 |---|---|
 | `include/model.h` | Shared jobs, resources, states and registry records |
 | `include/scheduler.h`, `src/scheduler/` | Scheduler registry, validation and basic lifecycle/accounting |
+| `include/scheduler_loop.h`, `include/scheduler_service.h` | Nonblocking poll loop and admission/status/nodes service boundary |
 | `include/runner.h`, `src/worker/` | Actual process execution, limits, output, usage sampling and cleanup |
 | `Makefile` | Library, development-driver and test builds |
 | `tools/` | Standalone development drivers; not the final production CLIs |
 | `tests/` | API/driver checks and controlled workload programs |
 | `docs/scheduler-core.md` | Scheduler API contracts and current limitations |
+| `docs/scheduler-loop.md` | Loop callbacks, snapshot/query APIs and transport/logger integration |
 | `docs/worker-runner.md` | Runner API, final-repo file list and integration notes |
 
 Registries use linked lists. No hash functions or hash tables are used in the current logic. Comments in C are practical Hinglish notes.
@@ -62,6 +64,6 @@ The runner forks/execs a real job in its own directory, captures both output str
 
 ## Remaining integration
 
-Scheduler policies, network dispatch and recovery are pending. Worker discovery/registration, heartbeats, draining, cache and checkpoints are pending. The two libraries are not yet connected through a production transport. See the API notes before integrating with the team's shared headers and Makefile.
+The 28 October Member 1 work adds a reusable poll loop, periodic/event-triggered scheduling hooks, submission logging hooks and pointer-free query snapshots. The teammate's shared protocol/network skeleton is preserved; its transport implementation is still pending. Scheduler policies, listener integration, network dispatch and recovery are pending. Worker discovery/registration, heartbeats, draining, cache and checkpoints are pending. The two libraries are not yet connected through a production transport. See the API notes before integrating with the team's shared headers and Makefile.
 
 Build artifacts, local planning notes and question screenshots are excluded from the current source tree's tracked project files. The final submission needs the completed three-program source/build setup; these foundations alone are not the full assignment.
