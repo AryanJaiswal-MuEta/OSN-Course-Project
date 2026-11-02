@@ -6,8 +6,8 @@ LDFLAGS =
 
 CORE = build/registry.o build/lifecycle.o build/loop.o build/service.o
 HEADERS = include/model.h include/scheduler.h include/scheduler_loop.h include/scheduler_service.h
-RUNNER = build/worker_runner.o build/worker_files.o build/worker_platform.o
-RUN_HEADERS = include/model.h include/runner.h src/worker/internal.h
+RUNNER = build/worker_runner.o build/worker_files.o build/worker_platform.o build/worker_config.o
+RUN_HEADERS = include/model.h include/runner.h include/worker_config.h src/worker/internal.h
 
 .PHONY: all test clean sanitize
 all: build/libscheduler.a build/scheduler_demo build/librunner.a build/worker_runner
@@ -38,6 +38,9 @@ build/test_job: tests/programs/job.c | build
 build/test_runner: tests/test_runner.c build/librunner.a $(RUN_HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/librunner.a $(LDFLAGS) -o $@
 
+build/test_worker_config: tests/test_worker_config.c build/librunner.a $(RUN_HEADERS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/librunner.a $(LDFLAGS) -o $@
+
 build/scheduler_demo: tools/scheduler_demo.c build/libscheduler.a $(HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(LDFLAGS) -o $@
 
@@ -50,12 +53,13 @@ build/test_loop: tests/test_loop.c build/libscheduler.a $(HEADERS)
 build/test_service: tests/test_service.c build/libscheduler.a $(HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(LDFLAGS) -o $@
 
-test: build/test_scheduler build/scheduler_demo build/test_runner build/worker_runner build/test_job build/test_loop build/test_service
+test: build/test_scheduler build/scheduler_demo build/test_runner build/worker_runner build/test_job build/test_loop build/test_service build/test_worker_config
 	./build/test_scheduler
 	./build/test_loop
 	./build/test_service
 	python3 tests/test_demo.py ./build/scheduler_demo
 	./build/test_runner ./build/test_job
+	./build/test_worker_config
 	python3 tests/test_runner.py ./build/worker_runner ./build/test_job
 
 sanitize:
