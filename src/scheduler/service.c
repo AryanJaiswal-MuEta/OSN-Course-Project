@@ -13,6 +13,28 @@ int sched_service_init(struct sched_service *svc,struct scheduler *s,
     return S_OK;
 }
 
+int sched_register_worker(struct sched_service *svc,struct resource total,
+                          uint64_t now,int *id)
+{
+    char msg[160];
+    int err;
+    if(!svc||!svc->s||!id) return S_BAD_INPUT;
+    // Registry hi ID aur capacity record own karegi. Network handler ko
+    // sirf returned ID reply mein bhejna hai; khud se IDs mat banana.
+    err=worker_add(svc->s,total,now,id);
+    if(svc->log){
+        if(err==S_OK)
+            snprintf(msg,sizeof(msg),"[SCHEDULER] Worker %d registered. Cores:%d RAM:%lldMB GPU:%d",
+                     *id,total.cores,total.ram,total.gpu);
+        else snprintf(msg,sizeof(msg),"[SCHEDULER] Worker registration rejected: %s",sched_error(err));
+        svc->log(msg,svc->arg);
+    }
+    // Invalid registration pe scheduling wakeup nahi chahiye. Successful
+    // add pe existing changed hook next loop pass ko request kar dega.
+    if(err==S_OK&&svc->changed) svc->changed(svc->arg);
+    return err;
+}
+
 int sched_submit(struct sched_service *svc,const char *user,
                  const struct job_req *req,uint64_t now,int *id)
 {

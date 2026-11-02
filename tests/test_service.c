@@ -114,10 +114,46 @@ done:
     return ok;
 }
 
+static int registration(void)
+{
+    struct scheduler s;
+    struct sched_service svc;
+    struct hooks h={0,0,{0}};
+    struct sched_node nodes[2];
+    struct worker *w;
+    size_t count;
+    int id=-1,other=-1,ok=1;
+    sched_init(&s);
+    CHECK(sched_service_init(&svc,&s,changed,log_msg,&h)==S_OK);
+    CHECK(sched_register_worker(&svc,(struct resource){4,2048,1},100,&id)==S_OK);
+    w=worker_find(&s,id);
+    CHECK(w&&w->state==ALIVE&&w->heartbeat_ms==100&&w->jobs==0);
+    CHECK(h.changes==1&&h.logs==1&&strstr(h.msg,"registered"));
+    CHECK(strstr(h.msg,"Cores:4 RAM:2048MB GPU:1")!=NULL);
+    CHECK(sched_nodes_get(&svc,nodes,2,&count)==S_OK&&count==1);
+    CHECK(nodes[0].id==id&&nodes[0].free.cores==4&&nodes[0].free.ram==2048);
+    CHECK(nodes[0].free.gpu==1);
+    CHECK(sched_register_worker(&svc,(struct resource){0,2048,0},110,&other)==S_BAD_INPUT);
+    CHECK(sched_register_worker(&svc,(struct resource){2,0,0},110,&other)==S_BAD_INPUT);
+    CHECK(sched_register_worker(&svc,(struct resource){2,100,-1},110,&other)==S_BAD_INPUT);
+    CHECK(s.worker_count==1&&other==-1&&h.changes==1&&h.logs==4);
+    CHECK(strstr(h.msg,"rejected")!=NULL);
+    CHECK(sched_register_worker(&svc,(struct resource){2,1024,0},120,&other)==S_OK);
+    CHECK(other==id+1&&h.changes==2&&h.logs==5);
+    CHECK(sched_nodes_get(&svc,nodes,2,&count)==S_OK&&count==2);
+    CHECK(nodes[1].id==other&&nodes[1].total.cores==2&&nodes[1].total.gpu==0);
+    CHECK(sched_register_worker(NULL,(struct resource){1,100,0},130,&other)==S_BAD_INPUT);
+    CHECK(sched_register_worker(&svc,(struct resource){1,100,0},130,NULL)==S_BAD_INPUT);
+    CHECK(s.worker_count==2&&h.changes==2);
+done:
+    sched_free(&s);
+    return ok;
+}
+
 int main(int argc,char **argv)
 {
     struct { const char *name; int (*run)(void); } tests[]={
-        {"snapshots",snapshots},{"full_queue",full_queue}
+        {"snapshots",snapshots},{"full_queue",full_queue},{"registration",registration}
     };
     size_t i;
     int ran=0,failed=0;

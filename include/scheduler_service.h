@@ -35,6 +35,8 @@ struct sched_status {
 
 int sched_service_init(struct sched_service *svc,struct scheduler *s,
                        void (*changed)(void *),void (*log)(const char *,void *),void *arg);
+int sched_register_worker(struct sched_service *svc,struct resource total,
+                          uint64_t now,int *id);
 int sched_submit(struct sched_service *svc,const char *user,
                  const struct job_req *req,uint64_t now,int *id);
 int sched_status_get(const struct sched_service *svc,int id,struct sched_status *out);
