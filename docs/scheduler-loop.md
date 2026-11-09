@@ -71,4 +71,4 @@ Coverage includes watch growth, registration flags, same-number remove/re-add, h
 
 Verified on WSL Ubuntu: five loop groups (119 checks), two service groups (1061 checks), all existing scheduler/worker groups and both driver suites pass. The complete suite also passes with AddressSanitizer and UndefinedBehaviorSanitizer. No new production network protocol is assumed by these tests.
 
-Still pending: listener/CLI integration, UDP discovery, worker registration handlers, reservation/start acknowledgement split, FIFO/PRIORITY/aging, heartbeat recovery and production client services. macOS execution is not verified here.
+The 9 November dispatch API now separates reservation from confirmed start; see `dispatch.md`. Listener/CLI integration, UDP discovery, worker registration handlers, FIFO/PRIORITY/aging, heartbeat recovery and production client services remain pending. macOS execution is not verified here.

@@ -16,6 +16,7 @@ struct sched_node {
     struct resource total;
     struct resource free;
     size_t jobs;
+    size_t reserved_jobs;
 };
 
 struct sched_status {
@@ -25,6 +26,8 @@ struct sched_status {
     int worker_id;
     int last_worker;
     uint64_t run_id;
+    int dispatch_pending;
+    uint64_t dispatch_ms;
     unsigned int failures;
     struct telemetry usage;
     uint64_t checkpoint_no;

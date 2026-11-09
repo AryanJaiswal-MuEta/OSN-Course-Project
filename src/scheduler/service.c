@@ -69,6 +69,8 @@ int sched_status_get(const struct sched_service *svc,int id,struct sched_status 
     out->worker_id=j->worker_id;
     out->last_worker=j->last_worker;
     out->run_id=j->run_id;
+    out->dispatch_pending=j->dispatch_pending;
+    out->dispatch_ms=j->dispatch_ms;
     out->failures=j->failures;
     out->usage=j->usage;
     out->checkpoint_no=j->checkpoint_no;
@@ -93,6 +95,7 @@ int sched_nodes_get(const struct sched_service *svc,struct sched_node *out,
         out[i].total=curr->total;
         out[i].free=worker_free(curr);
         out[i].jobs=curr->jobs;
+        out[i].reserved_jobs=curr->reserved_jobs;
         i++;
     }
     return S_OK;

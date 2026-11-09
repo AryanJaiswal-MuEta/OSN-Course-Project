@@ -26,8 +26,15 @@ struct resource worker_free(const struct worker *w);
 int job_add(struct scheduler *s,const struct job_req *req,uint64_t now,int *id);
 struct job *job_find(struct scheduler *s,int id);
 
-// Yeh policy selector nahi hai. Abhi test driver worker choose karega;
-// FIFO/PRIORITY module baad mein isi lifecycle ko call karega.
+// Network dispatch mein pehle reserve, phir actual start ki confirmation.
+// Sirf assignment bhejne se job RUNNING nahi banegi.
+int job_reserve(struct scheduler *s,int id,int worker_id,uint64_t now,uint64_t *run_id);
+int job_confirm_start(struct scheduler *s,int id,int worker_id,uint64_t run_id,uint64_t now);
+int job_abort_dispatch(struct scheduler *s,int id,int worker_id,uint64_t run_id,
+                       const char *reason,uint64_t now);
+
+// Local driver ka shortcut: same call mein reserve aur confirm. Network
+// send ke baad yeh shortcut mat use karna; confirmation abhi aani baaki hai.
 int job_start(struct scheduler *s,int id,int worker_id,uint64_t now,uint64_t *run_id);
 
 // Worker ka stop/exit confirm hone ke baad hi result apply karna.

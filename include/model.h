@@ -45,6 +45,8 @@ struct job {
     int worker_id;
     int last_worker;
     uint64_t run_id;
+    int dispatch_pending;
+    uint64_t dispatch_ms;
     uint64_t submit_ms;
     uint64_t queue_ms;
     uint64_t wait_ms;
@@ -76,6 +78,7 @@ struct worker {
     struct resource total;
     struct resource used;
     size_t jobs;
+    size_t reserved_jobs;
     uint64_t heartbeat_ms;
     double load;
     struct worker *next;
