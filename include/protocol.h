@@ -66,6 +66,7 @@ struct protocol_decode
     char *buffer;
     size_t length;
     size_t capacity;
+    char*message_payload;
 };
 
 /** Encode one message into a provided buffer. */
@@ -75,12 +76,12 @@ int protocol_validate_type(uint16_t type);
 /** Convert a protocol error to string (using struct definations) */
 const char *protocol_error_name(int error);
 /** Initialize an decoder. */
-void protocol_decoder_init(struct protocol_decoder *decoder);
+void protocol_decoder_init(struct protocol_decode *decoder);
 /** Release decoder once all the  buffer is used*/
-void protocol_decoder_free(struct protocol_decoder *decoder);
+void protocol_decoder_free(struct protocol_decode *decoder);
 /** Append bytes received from the network. */
-int protocol_decoder_feed(struct protocol_decoder *decoder, const void *data, size_t length);
+int protocol_decoder_feed(struct protocol_decode *decoder, const void *data, size_t length);
 /** Extract one complete message, or return PROTOCOL_INCOMPLETE. */
-int protocol_decoder_next(struct protocol_decoder *decoder,struct protocol_message *message);
+int protocol_decoder_next(struct protocol_decode *decoder,struct protocol_message *message);
                                                
 #endif
