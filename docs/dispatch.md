@@ -38,7 +38,7 @@ A valid acknowledgement of an existing reservation can arrive while a worker is 
 
 ## Integration still needed
 
-The worker runner currently reports successful fork before exec confirmation. The production worker must implement an actual start acknowledgement before the scheduler uses `job_confirm_start()`. Connection/session checks must ensure the supplied worker identity belongs to the sender.
+The runner's immediate return still reports fork only. The worker loop now exposes asynchronous startup outcomes in `worker-start.md`; the production adapter must use RUN_START_OK to queue a successful start acknowledgement before calling scheduler `job_confirm_start()`. Connection/session checks must ensure the supplied worker identity belongs to the sender. Failed launches still require their own pre-start failure-to-terminal handler.
 
 Automatic reservation deadlines/recovery, running-job retries, pre-start failure-to-terminal handling, pending cancellation handshake, lifecycle event routing and full timestamped logging remain later work. The protocol/transport files are unchanged by this slice.
 

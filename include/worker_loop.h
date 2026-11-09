@@ -10,9 +10,19 @@
 
 struct worker_loop;
 
+struct worker_start {
+    int id;
+    uint64_t run_id;
+    enum run_start exec_state;
+    int stage;
+    int error;
+    char reason[160];
+};
+
 struct worker_result {
     int id;
     uint64_t run_id;
+    enum run_start exec_state;
     enum job_state state;
     struct telemetry usage;
     char reason[160];
@@ -23,6 +33,7 @@ struct worker_hooks {
     void (*tick)(struct worker_loop *loop,uint64_t now,void *arg);
     output_fn output;
     int (*result)(const struct worker_result *result,void *arg);
+    int (*start)(const struct worker_start *start,void *arg);
 };
 
 struct worker_watch {

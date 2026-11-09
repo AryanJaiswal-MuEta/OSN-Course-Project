@@ -51,7 +51,7 @@ This implements the assignment's basic restrictions, not a full filesystem/sysca
 
 The callback returns 0 when it accepts the whole chunk, otherwise nonzero. Rejected chunks are retried with the same bytes; a NULL callback does not discard output. Queueing the bytes internally counts as acceptance only if the caller preserves that queue until delivery. The runner does not itself implement network delivery acknowledgements.
 
-`runner_start()` returning success means the child was forked, not that exec has already succeeded. Setup/exec errors arrive asynchronously through `runner_poll()`. A production started-acknowledgement handshake is still needed in the network adapter; do not interpret successful fork alone as confirmed program execution.
+`runner_start()` returning success means the child was forked, not that exec has already succeeded. Setup/exec outcomes arrive asynchronously through `runner_poll()` in `exec_state`. The worker loop now exposes a start-outcome callback; see `worker-start.md`. The network adapter must queue that notification before output/results rather than treating successful fork alone as confirmed execution.
 
 Multiple jobs can run in one context. Calls must be made by the worker's owning event loop; this is not a concurrent-caller/thread-safe interface. One job ID can have only one retained execution at a time, even when run IDs differ. Release the old record before restarting the same ID.
 

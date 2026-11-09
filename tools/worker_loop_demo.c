@@ -139,6 +139,14 @@ static int result(const struct worker_result *r,void *arg)
     return 0;
 }
 
+static int started(const struct worker_start *s,void *arg)
+{
+    struct console *c=arg;
+    if(printf("[Start] Job %d run %llu: %s\n",s->id,(unsigned long long)s->run_id,s->reason)<0||
+       fflush(stdout)<0){ c->error=1; return 1; }
+    return 0;
+}
+
 static void tick(struct worker_loop *loop,uint64_t now,void *arg)
 {
     struct console *c=arg;
@@ -149,7 +157,7 @@ static void tick(struct worker_loop *loop,uint64_t now,void *arg)
 int main(void)
 {
     struct worker_loop loop;
-    struct worker_hooks hooks={io,tick,output,result};
+    struct worker_hooks hooks={.io=io,.tick=tick,.output=output,.result=result,.start=started};
     struct console c={0};
     struct sigaction sa;
     int flags,err;

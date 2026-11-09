@@ -16,9 +16,10 @@ This is a tight target, not a completion guarantee. It assumes Member 3 independ
 | Member 1 today | Dispatch reservation/confirmation/abort and focused tests, described in `dispatch.md` |
 | Member 1 remaining | Actual policies, listener/session/assignment integration, fault recovery and advanced scheduling |
 | Member 2 foundation | Local fork/exec runner, job-directory/staging, limits, output, telemetry, cancellation, cleanup, loop skeleton and startup configuration helpers exist |
-| Member 2 remaining | Actual exec/start acknowledgement, production worker startup/registration, connection lifecycle/heartbeats/drain, cache and checkpoints |
+| Member 2 current slice | Asynchronous exec outcome/start callback and ordered output/result handling, implemented on 9 Nov at the user's request; its wire integration is pending |
+| Member 2 remaining | Production worker startup/registration, connection lifecycle/heartbeats/drain, cache and checkpoints |
 | Shared networking | Protocol implementation has arrived; strict compilation currently fails. Transport has declarations but no function implementations; discovery/logging are empty and there is no production client |
-| Build integration | Recent syncs removed worker-loop/config build/test rules even though those source files remain. Integrate those modules deliberately at the next worker/integration step |
+| Build integration | The 9 Nov Member 2 slice restores the worker-loop/config build/test rules removed by recent syncs |
 | Cross-platform | Previous WSL normal/root and sanitizer checks exist for local components. macOS execution and real multi-machine discovery remain unverified |
 
 The strict check used for the new protocol implementation is `cc -Iinclude -D_POSIX_C_SOURCE=200809L -std=c11 -Wall -Wextra -Wpedantic -Werror -fsyntax-only src/common/protocol.c`. It reports pointer-signedness errors and an always-true magic comparison caused by the current get32 result range. Member 3 should correct and test framing before transport integration. This inspection did not edit their files.
@@ -30,7 +31,7 @@ Hours below are **Aryan's combined effort across Members 1 and 2**. Member 3's c
 | Target dates | Aryan's task | Estimated hours | Member 3 dependency | Passing gate |
 |---|---|---:|---|---|
 | **9 Nov** | Member 1: reserve resources, confirm start, abort safely, expose counters and test | 3–4 | No transport rewrite today | Preparation cannot overcommit or lose a job; late/duplicate messages cannot corrupt resources |
-| **10 Nov** | Member 2: distinguish fork from actual exec confirmation; expose start outcome, connect to loop callbacks; restore relevant worker build rules | 3–4 | Agree JOB_ACCEPTED/start semantics | Successful exec produces start outcome; setup/exec failure cannot masquerade as a running program |
+| **9–10 Nov** | Member 2: start-outcome slice implemented on 9 Nov; use the 10 Nov slot to review it and agree adapter/start-failure semantics, not reimplement it | 3–4 | Agree JOB_ACCEPTED/start semantics | Successful exec produces start outcome; setup/exec failure cannot masquerade as a running program |
 | **11 Nov** | Member 1: FIFO, PRIORITY, aging and policy tests, excluding reserved jobs from new selection | 4–5 | Stable job requirement fields | Strict FIFO blocks; priority skips nonfits; aging reaches priority 1 correctly |
 | **12–14 Nov** | Member 1/2: real scheduler/worker startup and session adapters, registration/replies, dispatch/result/output wiring, then core integration | 14–17 | Working protocol/transport, discovery and minimal client; agree payloads first | A client submits a compatible program, a real worker runs it over TCP, output/result return, reservations release; basic Linux/macOS/hotspot checks start here |
 | **15–18 Nov** | Member 1/2: heartbeat/loss state machine, retry budget, cancel/stop races, drain/reconnect, telemetry and load selection; integrate live-follow path | 18–22 | Output subscriptions/client events/logging and stable transport | Worker kill/partition triggers recovery; retry exhaustion works; cancel/drain/follow do not leak resources or zombies |
@@ -64,4 +65,4 @@ Early platform testing and incremental integration are required throughout these
 
 ## Today's explicit boundary
 
-Only the Member 1 dispatch slice is implemented in today's change. This plan does not implement tomorrow's worker acknowledgement, scheduling algorithms, network transport, resilience or advanced features. The rest remains scheduled work.
+Member 1 dispatch and the separately requested Member 2 start-outcome slice are implemented on 9 November. Bringing that worker slice forward does not add another 3–4 hours to the remaining budget; the 10 November slot is now for review/adapter agreement. Scheduling algorithms, production network transport, resilience and advanced features remain scheduled work. No work or commit dates are fabricated.

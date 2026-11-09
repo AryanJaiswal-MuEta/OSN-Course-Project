@@ -95,7 +95,7 @@ static void io(struct worker_loop *loop,int fd,short events,void *arg)
     }
 }
 
-static const struct worker_hooks hooks={io,tick,output,result};
+static const struct worker_hooks hooks={.io=io,.tick=tick,.output=output,.result=result};
 
 static int wait_empty(struct worker_loop *loop)
 {

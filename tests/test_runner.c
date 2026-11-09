@@ -81,6 +81,7 @@ static int concurrent(void)
     CHECK(wait_all(&r,&c));
     j=runner_find(&r,base,1);
     CHECK(j&&j->state==COMPLETED&&j->reaped);
+    CHECK(j->exec_state==RUN_START_OK);
     strcpy(dir,j->dir); pid=j->pid;
     CHECK(access(dir,F_OK)==0);
     CHECK(c.bytes>40960);
@@ -136,6 +137,7 @@ static int cancel(void)
     CHECK(runner_cancel(&r,base,1)==RUN_BUSY);
     CHECK(wait_all(&r,&c));
     CHECK(runner_find(&r,base,1)->state==CANCELLED);
+    CHECK(runner_find(&r,base,1)->exec_state==RUN_START_UNCONFIRMED);
     CHECK(strstr(runner_find(&r,base,1)->reason,"Cancelled")!=NULL);
 done:
     runner_free(&r);

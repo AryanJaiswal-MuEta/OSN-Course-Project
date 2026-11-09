@@ -17,7 +17,7 @@ Merge the Makefile additions: `worker_loop.o` belongs in `librunner.a`, and `wor
 2. Attach a nonblocking scheduler connection through `worker_loop_watch(loop,WORKER_CONN,fd,events)`. An optional local-command fd uses WORKER_ADMIN. The function sets O_NONBLOCK/FD_CLOEXEC; neither slot owns/closes the fd.
 3. In the I/O callback, decode incoming frames through the shared transport. After a complete assignment and local executable preparation, call `worker_loop_assign()` with the job ID, run ID, requirements and argv. The existing runner stages local paths into the job directory; bare PATH commands need no copy.
 4. Run `worker_loop_step()` within an existing driver, or `worker_loop_run()` until stop. Its return convention is 0 on success and -1 with errno on loop errors. Assignment/cancel/init functions use the RUN_* codes.
-5. The loop polls running jobs at a nominal 100 ms cadence, forwards output, and invokes the final-result callback only after all captured output has been accepted and the child has been reaped.
+5. The loop polls jobs at a nominal 100 ms cadence. With a start hook configured, startup outcome acceptance precedes output. Final results follow all captured output and child reaping; see `worker-start.md`.
 6. Return 0 from the result callback only when the result is safely accepted by the transport/service queue. Nonzero keeps the job record and directory for retry. Successful acceptance removes the record and cleans its files automatically.
 7. Stop the loop, then free it. `worker_loop_free()` aborts/reaps remaining jobs through `runner_free()`; it does not flush pending transport data or close caller-owned descriptors.
 
@@ -52,6 +52,8 @@ cancel 101 1
 ```
 
 Use arbitrary positive IDs/run IDs and program arguments. Paths/arguments with spaces or shell quoting are not supported by this small driver. It is not the final worker command syntax. `runner_start()` success means a child was forked, not an exec/start acknowledgement from the network.
+
+The updated console prints a `[Start]` outcome through the new start hook. Its output/result ordering follows that callback; legacy loop users without the hook retain the earlier behavior.
 
 EOF stops taking commands and waits for all jobs/results. `quit` or Ctrl+C aborts active jobs. This EOF convenience in the driver is not the assignment's graceful drain implementation. The driver prints callback output for inspection; production transport should queue it to the scheduler instead. Development stdout may block, so this console is not a slow-client transport implementation.
 

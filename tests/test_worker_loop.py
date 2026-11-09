@@ -1,5 +1,6 @@
 import os
 import pathlib
+import resource
 import signal
 import subprocess
 import sys
@@ -25,6 +26,8 @@ def main():
     proc = subprocess.run([demo], input=commands, text=True,
                           capture_output=True, timeout=12, cwd=cwd)
     check(proc.returncode == 0, proc.stdout + proc.stderr)
+    check(proc.stdout.index(f"[Start] Job {base} run 7: Program exec confirmed") <
+          proc.stdout.index("tick 0"), "start outcome must precede output")
     check("tick 0" in proc.stdout and "tick 3" in proc.stdout,
           "streaming output missing:\n" + proc.stdout + proc.stderr)
     check("hello stdout" in proc.stdout and "hello stderr" in proc.stdout,
@@ -51,6 +54,15 @@ def main():
           f"Job {base} run 1 CANCELLED" in proc.stdout,
           "execution token/cancellation handling failed")
 
+    commands = f"run {base} 1 64 5 {program} hello\n"
+    proc = subprocess.run([demo], input=commands, text=True, capture_output=True,
+                          timeout=12, cwd=cwd,
+                          preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CPU, (2, 2)))
+    check(proc.returncode == 0 and "Setup/exec failed at stage 4" in proc.stdout and
+          "Program exec confirmed" not in proc.stdout and "hello stdout" not in proc.stdout and
+          f"Job {base} run 1 FAILED" in proc.stdout,
+          "resource-setup failure incorrectly confirmed exec:\n" + proc.stdout + proc.stderr)
+
     proc = subprocess.Popen([demo], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True, cwd=cwd)
     try:
@@ -65,7 +77,7 @@ def main():
         if proc.poll() is None:
             proc.kill()
             proc.communicate()
-    print("PASS worker loop console: concurrent jobs/EOF, invalid input, cancel and interrupt")
+    print("PASS worker loop console: start order, concurrent jobs/EOF, invalid input, cancel, setup failure and interrupt")
 
 
 if __name__ == "__main__":

@@ -39,6 +39,7 @@ int main(int argc,char **argv)
         volatile unsigned long value=0;
         while(1) value++;
     }else if(!strcmp(argv[1],"exit")) return 7;
+    else if(!strcmp(argv[1],"exit127")) return 127;
     else if(!strcmp(argv[1],"segv")) raise(SIGSEGV);
     else if(!strcmp(argv[1],"spam")){
         memset(buf,'x',sizeof(buf));

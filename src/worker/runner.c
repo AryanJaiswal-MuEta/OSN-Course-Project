@@ -168,14 +168,19 @@ fail:
     return RUN_IO;
 }
 
-static void read_setup_error(struct run_job *j)
+static int read_setup_error(struct run_job *j)
 {
     ssize_t n;
     int msg[2];
+    if(j->exec_eof||j->setup_stage) return 0;
     while(j->err_count<sizeof(j->err_buf)){
         n=read(j->err_fd,j->err_buf+j->err_count,sizeof(j->err_buf)-j->err_count);
         if(n<0&&errno==EINTR) continue;
-        if(n<=0) break;
+        if(n<0){
+            if(errno==EAGAIN||errno==EWOULDBLOCK) break;
+            return -1;
+        }
+        if(!n){ j->exec_eof=1; break; }
         j->err_count+=(size_t)n;
     }
     if(j->err_count==sizeof(j->err_buf)){
@@ -183,6 +188,20 @@ static void read_setup_error(struct run_job *j)
         j->setup_stage=msg[0];
         j->setup_errno=msg[1];
     }
+    return 0;
+}
+
+static void check_start(struct run_job *j)
+{
+    if(j->exec_state!=RUN_START_PENDING) return;
+    if(j->setup_stage) j->exec_state=RUN_START_FAILED;
+    else if(j->reaped&&(j->stop!=STOP_NONE||!WIFEXITED(j->status)||j->err_count))
+        j->exec_state=RUN_START_UNCONFIRMED;
+    else if(j->exec_eof&&!j->err_count&&j->stop==STOP_NONE)
+        j->exec_state=RUN_START_OK;
+    // Fork success akela kaafi nahi hai. CLOEXEC pipe bina error ke close
+    // hua toh exec ka normal success signal hai. Agar confirmation se pehle
+    // stop/signal dikh gaya, usko guess karke successful start mat bolo.
 }
 
 static void diagnose(struct run_job *j)
@@ -227,7 +246,7 @@ int runner_poll(struct runner *r,output_fn output,void *arg)
     now=runner_now_ms();
     for(j=r->head;j;j=j->next){
         if(j->finished) continue;
-        read_setup_error(j);
+        if(read_setup_error(j)<0) return -1;
         if(!j->reaped){
             run_sample(j);
             do { pid=wait4(j->pid,&j->status,WNOHANG,&usage); } while(pid<0&&errno==EINTR);
@@ -237,7 +256,7 @@ int runner_poll(struct runner *r,output_fn output,void *arg)
                 // Main process exit ke baad bache hue same-group children ko
                 // bhi stop karo; warna output.log mein likhte reh sakte hain.
                 (void)kill(-j->pid,SIGKILL);
-                read_setup_error(j);
+                if(read_setup_error(j)<0) return -1;
                 j->usage.cpu_time=(double)usage.ru_utime.tv_sec+usage.ru_utime.tv_usec/1000000.0+
                                   usage.ru_stime.tv_sec+usage.ru_stime.tv_usec/1000000.0;
                 j->usage.faults=(uint64_t)usage.ru_minflt+(uint64_t)usage.ru_majflt;
@@ -261,6 +280,7 @@ int runner_poll(struct runner *r,output_fn output,void *arg)
 #endif
             }
         }
+        check_start(j);
         // pread se parent ka read position aur child ka write position alag
         // rehta hai. Ek poll mein bounded chunk, taaki dusri jobs starve na ho.
         do { n=pread(j->out_fd,buf,sizeof(buf),j->offset); } while(n<0&&errno==EINTR);
