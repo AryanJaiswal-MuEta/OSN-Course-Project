@@ -37,21 +37,19 @@ struct transport
     struct protocol_decode decoder; // protocol decoder decodes what it receives
 };
 
-/** Initialize a transport around an existing socket descriptor */
+/** init transport through  an existing sock fd */
 int transport_init(struct transport *transport, int fd, int owns_fd);
-/** Close the owned descriptor and release all buffers. */
+/** close the fd */
 void transport_free(struct transport *transport);
-/** Set the descriptor to nonblocking mode. */
+/** make sock fd non blocking */
 int transport_set_nonblocking(struct transport *transport);
-/** Queue one encoded frame without blocking. */
+/** add one tcp frame in queue in a non blocking fashion. */
 int transport_queue(struct transport *transport,const struct protocol_message *message);
 /** Flush queued bytes; returns TRANSPORT_WOULD_BLOCK if incomplete. */
 int transport_flush(struct transport *transport);
-/** Read available bytes and deliver complete messages to @p callback. */
 int transport_read(struct transport *transport, transport_message_function callback, void *arg);
-/** Whether a write poll event is currently needed. */
+/** to detect whether we need to write for transport(tcp) */
 int transport_wants_write(const struct transport *transport);
-/** Convert a transport error to a diagnostic string. */
+/** tcp error codes to human understandable*/
 const char *transport_error_name(int error);
-
 #endif
