@@ -6,8 +6,8 @@ LDFLAGS =
 
 CORE = build/registry.o build/lifecycle.o build/dispatch.o build/loop.o build/service.o build/policy.o
 HEADERS = include/model.h include/scheduler.h include/scheduler_loop.h include/scheduler_service.h
-RUNNER = build/worker_runner.o build/worker_files.o build/worker_platform.o build/worker_loop.o build/worker_config.o
-RUN_HEADERS = include/model.h include/runner.h include/worker_loop.h include/worker_config.h src/worker/internal.h
+RUNNER = build/worker_runner.o build/worker_files.o build/worker_platform.o build/worker_loop.o build/worker_config.o build/worker_discovery.o build/common_discovery.o
+RUN_HEADERS = include/model.h include/runner.h include/worker_loop.h include/worker_config.h include/worker_discovery.h include/discovery.h src/worker/internal.h
 
 .PHONY: all test clean sanitize
 all: build/libscheduler.a build/scheduler_demo build/librunner.a build/worker_runner build/worker_loop_demo
@@ -26,6 +26,9 @@ build/worker_%.o: src/worker/%.c $(RUN_HEADERS) | build
 
 build/librunner.a: $(RUNNER)
 	$(AR) rcs $@ $(RUNNER)
+
+build/common_discovery.o: src/common/discovery.c include/discovery.h | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 build/worker_runner: tools/worker_runner.c build/librunner.a $(RUN_HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/librunner.a $(LDFLAGS) -o $@
@@ -46,6 +49,13 @@ build/test_worker_loop: tests/test_worker_loop.c build/librunner.a $(RUN_HEADERS
 
 build/test_worker_config: tests/test_worker_config.c build/librunner.a $(RUN_HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/librunner.a $(LDFLAGS) -o $@
+
+build/test_worker_discovery: tests/test_worker_discovery.c build/librunner.a $(RUN_HEADERS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/librunner.a $(LDFLAGS) -o $@
+
+.PHONY: test-discovery
+test-discovery: build/test_worker_discovery
+	python3 tests/test_worker_discovery.py ./build/test_worker_discovery
 
 build/test_start_ack: tests/test_start_ack.c build/librunner.a build/libscheduler.a $(RUN_HEADERS) $(HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/librunner.a build/libscheduler.a $(LDFLAGS) -o $@
