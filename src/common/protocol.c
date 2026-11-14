@@ -23,12 +23,12 @@ static void put32(char *p, uint32_t value)
 
 /** get 16 / get 32 helps in decoding header and payload easily*/
 
-static uint16_t get32(char *p)
+static uint32_t get32(char *p)
 {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
 }
 
-static uint32_t get16(char *p)
+static uint16_t get16(char *p)
 {
     return (uint16_t)(((uint16_t)p[0] << 8) | p[1]);
 }
@@ -54,12 +54,12 @@ int protocol_encode(const struct protocol_message *message, unsigned char *buffe
     total = PROTOCOL_HEADER_SIZE + message->payload_len;
     if (capacity < total)
         return PROTOCOL_TOO_LARGE;
-
-    put32(buffer, PROTOCOL_MAGIC_NUMBER);
-    put16(buffer + 4, PROTOCOL_VERSION);
-    put16(buffer + 6, message->type);
-    put32(buffer + 8, (uint32_t)message->payload_len);
-    put32(buffer + 12, (uint32_t)message->request_id);
+    /** casted buffer to char* to ensure no compilation error is there  */
+    put32((char *)buffer, PROTOCOL_MAGIC_NUMBER);
+    put16((char *)buffer + 4, PROTOCOL_VERSION);
+    put16((char *)buffer + 6, message->type);
+    put32((char *)buffer + 8, (uint32_t)message->payload_len);
+    put32((char *)buffer + 12, (uint32_t)message->request_id);
     if (message->payload_len > 0)
     {
         memcpy(buffer + PROTOCOL_HEADER_SIZE, message->payload, message->payload_len);
