@@ -6,6 +6,7 @@
 
 enum run_err { RUN_OK=0,RUN_BAD_INPUT,RUN_NO_MEMORY,RUN_NOT_FOUND,RUN_IO,RUN_BUSY };
 enum stop_reason { STOP_NONE,STOP_CANCEL,STOP_TIMEOUT,STOP_MEMORY };
+enum run_start { RUN_START_PENDING,RUN_START_OK,RUN_START_FAILED,RUN_START_UNCONFIRMED };
 
 struct run_job {
     int id;
@@ -26,6 +27,9 @@ struct run_job {
     int status;
     int setup_stage;
     int setup_errno;
+    enum run_start exec_state;
+    int exec_eof;
+    int start_reported;
     unsigned char err_buf[2*sizeof(int)];
     size_t err_count;
     char reason[160];

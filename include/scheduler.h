@@ -43,4 +43,14 @@ int job_finish(struct scheduler *s,int id,uint64_t run_id,
                enum job_state state,const char *reason,uint64_t now);
 int job_cancel_pending(struct scheduler *s,int id,const char *reason,uint64_t now);
 
+enum sched_policy { SCHED_FIFO_ORDER,SCHED_PRIORITY_ORDER };
+struct sched_pick {
+    int job_id;
+    int worker_id;
+};
+
+// Sirf next candidate dhoondo. Caller reserve karega, phir dobara pick karega.
+int sched_pick_next(const struct scheduler *s,enum sched_policy policy,
+                    uint64_t now,struct sched_pick *out);
+
 #endif
