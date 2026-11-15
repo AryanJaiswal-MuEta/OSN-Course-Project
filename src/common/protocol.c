@@ -178,7 +178,7 @@ int protocol_decoder_next(struct protocol_decode *decoder, struct protocol_messa
         memcpy(payload, decoder->buffer + PROTOCOL_HEADER_SIZE, payload_len);
     }
     free(decoder->message_payload);
-    decoder->message_payload = payload;
+    decoder->message_payload = (char*)payload;
     decoder->length -= total;
     memmove(decoder->buffer, decoder->buffer + total, decoder->length);
     message->type = type;
