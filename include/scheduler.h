@@ -32,6 +32,9 @@ int job_reserve(struct scheduler *s,int id,int worker_id,uint64_t now,uint64_t *
 int job_confirm_start(struct scheduler *s,int id,int worker_id,uint64_t run_id,uint64_t now);
 int job_abort_dispatch(struct scheduler *s,int id,int worker_id,uint64_t run_id,
                        const char *reason,uint64_t now);
+// Worker ke terminal launch failure ke baad hi call karo.
+int job_fail_dispatch(struct scheduler *s,int id,int worker_id,uint64_t run_id,
+                      const char *reason,uint64_t now);
 
 // Local driver ka shortcut: same call mein reserve aur confirm. Network
 // send ke baad yeh shortcut mat use karna; confirmation abhi aani baaki hai.

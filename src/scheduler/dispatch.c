@@ -66,8 +66,8 @@ int job_confirm_start(struct scheduler *s,int id,int worker_id,uint64_t run_id,u
     return S_OK;
 }
 
-int job_abort_dispatch(struct scheduler *s,int id,int worker_id,uint64_t run_id,
-                       const char *reason,uint64_t now)
+static int finish_dispatch(struct scheduler *s,int id,int worker_id,uint64_t run_id,
+                           const char *reason,uint64_t now,int failed)
 {
     struct job *j;
     struct worker *w;
@@ -84,5 +84,24 @@ int job_abort_dispatch(struct scheduler *s,int id,int worker_id,uint64_t run_id,
     j->dispatch_pending=0;
     j->dispatch_ms=0;
     snprintf(j->reason,sizeof(j->reason),"%s",reason?reason:"");
+    if(failed){
+        // Abort retry ke liye slot rakhta hai; terminal failure slot bhi chhodega.
+        s->pending--;
+        j->last_worker=worker_id;
+        j->end_ms=now;
+        j->state=FAILED;
+    }
     return S_OK;
+}
+
+int job_abort_dispatch(struct scheduler *s,int id,int worker_id,uint64_t run_id,
+                       const char *reason,uint64_t now)
+{
+    return finish_dispatch(s,id,worker_id,run_id,reason,now,0);
+}
+
+int job_fail_dispatch(struct scheduler *s,int id,int worker_id,uint64_t run_id,
+                      const char *reason,uint64_t now)
+{
+    return finish_dispatch(s,id,worker_id,run_id,reason,now,1);
 }

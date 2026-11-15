@@ -148,6 +148,16 @@ static int full_queue(void)
     CHECK(job_add(&s,&req,2005,&id)==S_OK&&id==QUEUE_CAP+1);
     CHECK(job_finish(&s,1,run,COMPLETED,"exit 0",2006)==S_OK);
     CHECK(s.pending==QUEUE_CAP&&s.job_count==QUEUE_CAP+1);
+    CHECK(job_reserve(&s,2,wid,2007,&run)==S_OK);
+    CHECK(job_start(&s,2,wid,2007,&run)==S_BAD_STATE);
+    CHECK(job_fail_dispatch(&s,2,wid,run+1,"exec failed",2008)==S_STALE_RUN);
+    CHECK(s.pending==QUEUE_CAP&&worker_find(&s,wid)->reserved_jobs==1);
+    CHECK(job_fail_dispatch(&s,2,wid,run,"exec failed",2008)==S_OK);
+    CHECK(job_fail_dispatch(&s,2,wid,run,NULL,2009)!=S_OK);
+    CHECK(job_find(&s,2)->state==FAILED&&job_find(&s,2)->start_ms==0);
+    CHECK(!strcmp(job_find(&s,2)->reason,"exec failed")&&job_find(&s,2)->end_ms==2008);
+    CHECK(s.pending==QUEUE_CAP-1&&worker_find(&s,wid)->reserved_jobs==0);
+    CHECK(worker_find(&s,wid)->jobs==0&&worker_fits(worker_find(&s,wid),req.need));
 done:
     sched_free(&s);
     return ok;

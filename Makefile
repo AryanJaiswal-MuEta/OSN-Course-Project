@@ -4,7 +4,7 @@ CPPFLAGS = -Iinclude -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOU
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -Werror -g
 LDFLAGS =
 
-CORE = build/registry.o build/lifecycle.o build/loop.o build/service.o
+CORE = build/registry.o build/lifecycle.o build/loop.o build/service.o build/dispatch.o build/policy.o
 HEADERS = include/model.h include/scheduler.h include/scheduler_loop.h include/scheduler_service.h
 COMMON = build/protocol.o build/transport.o build/discovery.o
 COMMON_HEADERS = include/protocol.h include/transport.h include/discovery.h
@@ -67,11 +67,15 @@ build/test_policy: tests/test_policy.c build/libscheduler.a $(HEADERS) | build
 build/test_integration: tests/test_integration.c build/libscheduler.a build/librunner.a build/worker_config.o build/worker_loop.o $(COMMON) $(HEADERS) $(RUN_HEADERS) $(COMMON_HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a build/librunner.a build/worker_config.o build/worker_loop.o $(COMMON) $(LDFLAGS) -o $@
 
-test: build/test_protocol build/test_discovery build/test_network build/test_policy build/test_integration
+build/test_dispatch: tests/test_dispatch.c build/libscheduler.a $(HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(LDFLAGS) -o $@
+
+test: build/test_protocol build/test_discovery build/test_network build/test_policy build/test_integration build/test_dispatch
 	./build/test_protocol
 	./build/test_discovery
 	./build/test_network
 	./build/test_policy
+	./build/test_dispatch
 	./build/test_integration
 
 sanitize:

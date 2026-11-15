@@ -28,6 +28,8 @@ Keeping the pending slot during preparation means an abort cannot lose the job w
 
 Call `job_abort_dispatch()` only when the worker has confirmed that execution did not start, or has stopped it, or a later fault-recovery mechanism has established that the worker/session is dead. The current function does not itself establish any of those facts.
 
+For a confirmed terminal launch failure, use `job_fail_dispatch()` instead. It validates the job, worker, and execution token, releases the reservation and pending slot, then records FAILED, the reason, and end time without entering RUNNING. It does not consume the worker-loss retry budget. Wiring this to the production worker result message is still pending.
+
 A failed write/timeout alone is not proof that the worker never received the assignment. Do not release the reservation and dispatch a second execution merely because a socket operation failed. Recovery/handshake integration must resolve that ambiguity.
 
 Abort releases the reservation and leaves the job QUEUED. A new reservation gets a new execution token. Late acknowledgements/results for an earlier token or the wrong worker are rejected. Duplicate confirmation/abort cannot change accounting twice.
