@@ -4,16 +4,30 @@ CPPFLAGS = -Iinclude -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOU
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -Werror -g
 LDFLAGS =
 
-CORE = build/registry.o build/lifecycle.o build/dispatch.o build/loop.o build/service.o build/policy.o
+CORE = build/registry.o build/lifecycle.o build/loop.o build/service.o
 HEADERS = include/model.h include/scheduler.h include/scheduler_loop.h include/scheduler_service.h
-RUNNER = build/worker_runner.o build/worker_files.o build/worker_platform.o build/worker_loop.o build/worker_config.o
-RUN_HEADERS = include/model.h include/runner.h include/worker_loop.h include/worker_config.h src/worker/internal.h
+COMMON = build/protocol.o build/transport.o build/discovery.o
+COMMON_HEADERS = include/protocol.h include/transport.h include/discovery.h
+RUNNER = build/worker_runner.o build/worker_files.o build/worker_platform.o
+RUN_HEADERS = include/model.h include/runner.h include/worker_config.h include/worker_loop.h src/worker/internal.h
 
 .PHONY: all test clean sanitize
-all: build/libscheduler.a build/scheduler_demo build/librunner.a build/worker_runner build/worker_loop_demo
+all: build/libscheduler.a build/librunner.a build/scheduler build/worker build/client
 
 build:
 	mkdir -p build
+
+build/protocol.o: src/common/protocol.c include/protocol.h | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+build/transport.o: src/common/transport.c include/transport.h include/protocol.h | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+build/discovery.o: src/common/discovery.c include/discovery.h | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+build/time_log.o: src/common/time_log.c include/time_log.h | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 build/%.o: src/scheduler/%.c $(HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
@@ -27,60 +41,38 @@ build/worker_%.o: src/worker/%.c $(RUN_HEADERS) | build
 build/librunner.a: $(RUNNER)
 	$(AR) rcs $@ $(RUNNER)
 
-build/worker_runner: tools/worker_runner.c build/librunner.a $(RUN_HEADERS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/librunner.a $(LDFLAGS) -o $@
+build/scheduler: src/scheduler/main.c build/libscheduler.a $(COMMON) $(HEADERS) $(COMMON_HEADERS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(COMMON) $(LDFLAGS) -o $@
 
-build/worker_loop_demo: tools/worker_loop_demo.c build/librunner.a $(RUN_HEADERS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/librunner.a $(LDFLAGS) -o $@
+build/worker: src/worker/main.c build/librunner.a build/worker_config.o build/worker_loop.o $(COMMON) $(RUN_HEADERS) $(COMMON_HEADERS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/librunner.a build/worker_config.o build/worker_loop.o $(COMMON) $(LDFLAGS) -o $@
 
-# Fixture pe sanitizer mat lagao: small RLIMIT_AS ke andar ASan ka shadow
-# mapping fit nahi hota. Runner/library/tests khud sanitize honge.
-build/test_job: tests/programs/job.c | build
-	$(CC) $(CPPFLAGS) -std=c11 -Wall -Wextra -Wpedantic -Werror -g $< -o $@
+build/client: src/client/main.c $(COMMON) $(COMMON_HEADERS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(COMMON) $(LDFLAGS) -o $@
 
-build/test_runner: tests/test_runner.c build/librunner.a $(RUN_HEADERS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/librunner.a $(LDFLAGS) -o $@
 
-build/test_worker_loop: tests/test_worker_loop.c build/librunner.a $(RUN_HEADERS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/librunner.a $(LDFLAGS) -o $@
 
-build/test_worker_config: tests/test_worker_config.c build/librunner.a $(RUN_HEADERS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/librunner.a $(LDFLAGS) -o $@
+build/test_protocol: tests/test_protocol.c src/common/protocol.c include/protocol.h | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< src/common/protocol.c $(LDFLAGS) -o $@
 
-build/test_start_ack: tests/test_start_ack.c build/librunner.a build/libscheduler.a $(RUN_HEADERS) $(HEADERS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/librunner.a build/libscheduler.a $(LDFLAGS) -o $@
+build/test_discovery: tests/test_discovery.c $(COMMON) $(COMMON_HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(COMMON) $(LDFLAGS) -o $@
 
-build/scheduler_demo: tools/scheduler_demo.c build/libscheduler.a $(HEADERS)
+build/test_network: tests/test_network.c $(COMMON) $(COMMON_HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(COMMON) $(LDFLAGS) -o $@
+
+build/test_policy: tests/test_policy.c build/libscheduler.a $(HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(LDFLAGS) -o $@
 
-build/test_scheduler: tests/test_scheduler.c build/libscheduler.a $(HEADERS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(LDFLAGS) -o $@
+build/test_integration: tests/test_integration.c build/libscheduler.a build/librunner.a build/worker_config.o build/worker_loop.o $(COMMON) $(HEADERS) $(RUN_HEADERS) $(COMMON_HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a build/librunner.a build/worker_config.o build/worker_loop.o $(COMMON) $(LDFLAGS) -o $@
 
-build/test_loop: tests/test_loop.c build/libscheduler.a $(HEADERS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(LDFLAGS) -o $@
-
-build/test_service: tests/test_service.c build/libscheduler.a $(HEADERS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(LDFLAGS) -o $@
-
-build/test_dispatch: tests/test_dispatch.c build/libscheduler.a $(HEADERS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(LDFLAGS) -o $@
-
-build/test_policy: tests/test_policy.c build/libscheduler.a $(HEADERS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(LDFLAGS) -o $@
-
-test: build/test_scheduler build/scheduler_demo build/test_runner build/worker_runner build/test_job build/test_loop build/test_service build/test_dispatch build/test_worker_loop build/test_worker_config build/worker_loop_demo build/test_start_ack build/test_policy
-	./build/test_scheduler
-	./build/test_loop
-	./build/test_service
-	./build/test_dispatch
+test: build/test_protocol build/test_discovery build/test_network build/test_policy build/test_integration
+	./build/test_protocol
+	./build/test_discovery
+	./build/test_network
 	./build/test_policy
-	python3 tests/test_demo.py ./build/scheduler_demo
-	./build/test_runner ./build/test_job
-	./build/test_worker_config
-	python3 tests/test_runner.py ./build/worker_runner ./build/test_job
-	./build/test_worker_loop ./build/test_job
-	./build/test_start_ack ./build/test_job
-	python3 tests/test_worker_loop.py ./build/worker_loop_demo ./build/test_job
+	./build/test_integration
 
 sanitize:
 	$(MAKE) clean

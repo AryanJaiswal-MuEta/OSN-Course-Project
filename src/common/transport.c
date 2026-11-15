@@ -30,7 +30,7 @@ int reserve(struct transport *transport, size_t extra)
     grown = realloc((char*)transport->pending, capacity);
     if (!grown)
         return TRANSPORT_NO_MEMORY;
-    transport->pending = grown;
+    transport->pending = (char*)grown;
     transport->pending_capacity = capacity;
     return TRANSPORT_OK;
 }
