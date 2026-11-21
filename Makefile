@@ -9,7 +9,7 @@ HEADERS = include/model.h include/scheduler.h include/scheduler_loop.h include/s
 COMMON = build/protocol.o build/transport.o build/discovery.o
 COMMON_HEADERS = include/protocol.h include/transport.h include/discovery.h
 RUNNER = build/worker_runner.o build/worker_files.o build/worker_platform.o
-RUN_HEADERS = include/model.h include/runner.h include/worker_config.h include/worker_loop.h src/worker/internal.h
+RUN_HEADERS = include/model.h include/runner.h include/worker_config.h include/worker_loop.h include/worker_discovery.h include/discovery.h src/worker/internal.h
 
 .PHONY: all test clean sanitize
 all: build/libscheduler.a build/librunner.a build/scheduler build/worker build/client
@@ -44,8 +44,15 @@ build/librunner.a: $(RUNNER)
 build/scheduler: src/scheduler/main.c build/libscheduler.a $(COMMON) $(HEADERS) $(COMMON_HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(COMMON) $(LDFLAGS) -o $@
 
-build/worker: src/worker/main.c build/librunner.a build/worker_config.o build/worker_loop.o $(COMMON) $(RUN_HEADERS) $(COMMON_HEADERS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/librunner.a build/worker_config.o build/worker_loop.o $(COMMON) $(LDFLAGS) -o $@
+build/worker: src/worker/main.c build/worker_config.o build/worker_loop.o build/worker_discovery.o build/librunner.a $(COMMON) $(RUN_HEADERS) $(COMMON_HEADERS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/worker_config.o build/worker_loop.o build/worker_discovery.o build/librunner.a $(COMMON) $(LDFLAGS) -o $@
+
+.PHONY: test-worker-discovery
+test-worker-discovery: build/test_worker_discovery build/worker
+	python3 tests/test_worker_discovery.py ./build/test_worker_discovery ./build/worker
+
+build/test_worker_discovery: tests/test_worker_discovery.c build/worker_discovery.o build/discovery.o $(RUN_HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/worker_discovery.o build/discovery.o $(LDFLAGS) -o $@
 
 build/client: src/client/main.c $(COMMON) $(COMMON_HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(COMMON) $(LDFLAGS) -o $@

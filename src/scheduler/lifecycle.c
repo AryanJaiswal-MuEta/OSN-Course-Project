@@ -83,7 +83,7 @@ int job_can_move(enum job_state from, enum job_state to)
     case WAITING:
         return to == QUEUED || to == CANCELLED;
     case QUEUED:
-        return to == RUNNING || to == CANCELLED;
+        return to == RUNNING || to == CANCELLED || to == FAILED;
     case RUNNING:
         return to == COMPLETED || to == FAILED || to == CANCELLED || to == LOST || to == QUEUED;
     case LOST:
@@ -146,34 +146,10 @@ int worker_set_state(struct scheduler *s, int id, enum worker_state state)
 
 int job_start(struct scheduler *s, int id, int worker_id, uint64_t now, uint64_t *run_id)
 {
-    struct job *j = job_find(s, id);
-    struct worker *w = worker_find(s, worker_id);
-    if (!s || !run_id)
-        return S_BAD_INPUT;
-    if (!j || !w)
-        return S_NOT_FOUND;
-    if (j->state != QUEUED || w->state != ALIVE)
-        return S_BAD_STATE;
-    if (!worker_fits(w, j->req.need))
-        return S_NO_RESOURCE;
-    if (now < j->queue_ms)
-        return S_BAD_INPUT;
-    if (s->next_run == UINT64_MAX)
-        return S_ID_LIMIT;
-
-    w->used.cores += j->req.need.cores;
-    w->used.ram += j->req.need.ram;
-    w->used.gpu += j->req.need.gpu;
-    w->jobs++;
-    s->pending--;
-    j->wait_ms += now - j->queue_ms;
-    j->start_ms = now;
-    j->worker_id = w->id;
-    j->last_worker = w->id;
-    j->run_id = s->next_run++;
-    j->state = RUNNING;
-    *run_id = j->run_id;
-    return S_OK;
+    int err = job_reserve(s, id, worker_id, now, run_id);
+    if (err != S_OK)
+        return err;
+    return job_confirm_start(s, id, worker_id, *run_id, now);
 }
 
 int job_finish(struct scheduler *s, int id, uint64_t run_id,
