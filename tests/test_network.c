@@ -36,7 +36,7 @@ static int test_transport_basic(void)
     int fds[2], count = 0;
     struct transport sender = {0}, receiver = {0};
     const unsigned char payload[] = "ok!";
-    struct protocol_message message = {JOB_COMPLETE, 9, (const char *)payload, 3};
+    struct protocol_message message = {JOB_COMPLETE, 9, payload, 3};
 
     CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
     CHECK(transport_init(&sender, fds[0], 1) == TRANSPORT_OK);
@@ -77,7 +77,7 @@ static int test_transport_short_write(void)
     memset(payload, 'A', test_payload_len);
 
     struct transport sender = {0}, receiver = {0};
-    struct protocol_message message = {JOB_COMPLETE, 10, (const char *)payload, test_payload_len};
+    struct protocol_message message = {JOB_COMPLETE, 10, payload, test_payload_len};
 
     CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
     CHECK(setsockopt(fds[0], SOL_SOCKET, SO_SNDBUF, &sndbuf_size, sizeof(sndbuf_size)) == 0);
@@ -91,8 +91,7 @@ static int test_transport_short_write(void)
     while (transport_wants_write(&sender)) {
         int result = transport_flush(&sender);
         CHECK(result == TRANSPORT_OK || result == TRANSPORT_WOULD_BLOCK);
-        int read_result=transport_read(&receiver,on_large_received,&count);
-        CHECK(read_result==TRANSPORT_OK||read_result==TRANSPORT_WOULD_BLOCK);
+        CHECK(transport_read(&receiver, on_large_received, &count) == TRANSPORT_WOULD_BLOCK || count == 1);
     }
 
     CHECK(transport_read(&receiver, on_large_received, &count) == TRANSPORT_WOULD_BLOCK);
