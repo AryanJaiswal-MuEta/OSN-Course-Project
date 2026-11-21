@@ -11,6 +11,9 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
 #include "internal.h"
 
 uint64_t runner_now_ms(void)
@@ -38,6 +41,11 @@ int runner_init(struct runner *r)
     struct passwd *ptr;
     if(!r) return RUN_BAD_INPUT;
     memset(r,0,sizeof(*r));
+#ifdef __linux__
+    // Leader ke exit pe orphaned grandchildren worker ko milenge, init pe
+    // depend nahi karna padega. Inko bhi group-wise reap karenge.
+    if(prctl(PR_SET_CHILD_SUBREAPER,1)<0) return RUN_IO;
+#endif
     r->uid=geteuid();
     r->gid=getegid();
     if(!r->uid){
@@ -73,6 +81,7 @@ static void child_run(struct runner *r,struct run_job *j,char *const args[],int 
 {
     struct rlimit lim;
     const char *path;
+    char checkpoint[160];
     int fd;
     long i;
     if(setpgid(0,0)<0) child_error(err_fd,1);
@@ -83,10 +92,15 @@ static void child_run(struct runner *r,struct run_job *j,char *const args[],int 
     signal(SIGXCPU,SIG_DFL);
 
     if(fchdir(j->dir_fd)<0) child_error(err_fd,2);
+    snprintf(checkpoint,sizeof(checkpoint),"%s/checkpoint",j->dir);
+    if(setenv("OSN_CHECKPOINT_DIR",checkpoint,1)<0) child_error(err_fd,2);
     if(r->drop_user){
         if(fchown(j->dir_fd,r->uid,r->gid)<0||
            fchown(j->out_fd,r->uid,r->gid)<0) child_error(err_fd,3);
         if(strchr(j->req.path,'/')&&fchownat(j->dir_fd,"program",r->uid,r->gid,0)<0)
+            child_error(err_fd,3);
+        if(fchown(j->checkpoint_fd,r->uid,r->gid)<0) child_error(err_fd,3);
+        if(fchownat(j->checkpoint_fd,"state",r->uid,r->gid,AT_SYMLINK_NOFOLLOW)<0&&errno!=ENOENT)
             child_error(err_fd,3);
         // Supplementary groups bhi hatao, phir pehle gid aur baad mein uid.
         // Root se drop fail hua toh program ko root mein bilkul mat chalao.
@@ -118,11 +132,17 @@ static void child_run(struct runner *r,struct run_job *j,char *const args[],int 
 int runner_start(struct runner *r,int id,uint64_t run_id,
                  const struct job_req *req,char *const args[])
 {
+    return runner_start_state(r,id,run_id,req,args,NULL,0);
+}
+
+int runner_start_state(struct runner *r,int id,uint64_t run_id,
+                       const struct job_req *req,char *const args[],const void *state,size_t size)
+{
     struct run_job *j,*curr;
     uint64_t bytes;
     long max_fd;
     int pipe_fd[2],flags,saved;
-    if(!r||!req||!args||!args[0]||id<=0||!run_id||
+    if(!r||!req||!args||!args[0]||id<=0||!run_id||size>CHECKPOINT_CAP||(!state&&size)||
        !memchr(req->path,'\0',PATH_LEN)||!req->path[0]||
        req->need.cores<=0||req->need.ram<=0||req->need.gpu<0||
        req->time_limit<=0||req->prio<1||req->prio>3) return RUN_BAD_INPUT;
@@ -133,8 +153,9 @@ int runner_start(struct runner *r,int id,uint64_t run_id,
     j=calloc(1,sizeof(*j));
     if(!j) return RUN_NO_MEMORY;
     j->id=id; j->run_id=run_id; j->req=*req;
-    j->dir_fd=j->out_fd=j->err_fd=-1;
+    j->dir_fd=j->out_fd=j->err_fd=j->checkpoint_fd=-1;
     if(run_prepare(j,req->path)<0) goto fail;
+    if(run_state_prepare(j,state,size)<0) goto fail;
     if(pipe(pipe_fd)<0) goto fail;
     j->err_fd=pipe_fd[0];
     if(fcntl(pipe_fd[0],F_SETFD,FD_CLOEXEC)<0||
@@ -168,14 +189,19 @@ fail:
     return RUN_IO;
 }
 
-static void read_setup_error(struct run_job *j)
+static int read_setup_error(struct run_job *j)
 {
     ssize_t n;
     int msg[2];
+    if(j->exec_eof||j->setup_stage) return 0;
     while(j->err_count<sizeof(j->err_buf)){
         n=read(j->err_fd,j->err_buf+j->err_count,sizeof(j->err_buf)-j->err_count);
         if(n<0&&errno==EINTR) continue;
-        if(n<=0) break;
+        if(n<0){
+            if(errno==EAGAIN||errno==EWOULDBLOCK) break;
+            return -1;
+        }
+        if(!n){ j->exec_eof=1; break; }
         j->err_count+=(size_t)n;
     }
     if(j->err_count==sizeof(j->err_buf)){
@@ -183,6 +209,20 @@ static void read_setup_error(struct run_job *j)
         j->setup_stage=msg[0];
         j->setup_errno=msg[1];
     }
+    return 0;
+}
+
+static void check_start(struct run_job *j)
+{
+    if(j->exec_state!=RUN_START_PENDING) return;
+    if(j->setup_stage) j->exec_state=RUN_START_FAILED;
+    else if(j->reaped&&(j->stop!=STOP_NONE||!WIFEXITED(j->status)||j->err_count))
+        j->exec_state=RUN_START_UNCONFIRMED;
+    else if(j->exec_eof&&!j->err_count&&j->stop==STOP_NONE)
+        j->exec_state=RUN_START_OK;
+    // Fork success akela kaafi nahi hai. CLOEXEC pipe bina error ke close
+    // hua toh exec ka normal success signal hai. Agar confirmation se pehle
+    // stop/signal dikh gaya, usko guess karke successful start mat bolo.
 }
 
 static void diagnose(struct run_job *j)
@@ -194,6 +234,9 @@ static void diagnose(struct run_job *j)
     if(j->stop==STOP_CANCEL){
         j->state=CANCELLED;
         snprintf(j->reason,sizeof(j->reason),"Cancelled by request");
+    }else if(j->stop==STOP_PREEMPT||j->stop==STOP_MIGRATE){
+        snprintf(j->reason,sizeof(j->reason),"%s stop confirmed",
+                 j->stop==STOP_PREEMPT?"Preemption":"Migration");
     }else if(j->stop==STOP_TIMEOUT||(WIFSIGNALED(j->status)&&WTERMSIG(j->status)==SIGXCPU)){
         snprintf(j->reason,sizeof(j->reason),"Wall-clock timeout exceeded (%ds limit)",j->req.time_limit);
     }else if(j->stop==STOP_MEMORY){
@@ -222,12 +265,12 @@ int runner_poll(struct runner *r,output_fn output,void *arg)
     pid_t pid;
     uint64_t now;
     long long peak;
-    int count=0;
+    int count=0,group_done;
     if(!r) return -1;
     now=runner_now_ms();
     for(j=r->head;j;j=j->next){
         if(j->finished) continue;
-        read_setup_error(j);
+        if(read_setup_error(j)<0) return -1;
         if(!j->reaped){
             run_sample(j);
             do { pid=wait4(j->pid,&j->status,WNOHANG,&usage); } while(pid<0&&errno==EINTR);
@@ -237,7 +280,7 @@ int runner_poll(struct runner *r,output_fn output,void *arg)
                 // Main process exit ke baad bache hue same-group children ko
                 // bhi stop karo; warna output.log mein likhte reh sakte hain.
                 (void)kill(-j->pid,SIGKILL);
-                read_setup_error(j);
+                if(read_setup_error(j)<0) return -1;
                 j->usage.cpu_time=(double)usage.ru_utime.tv_sec+usage.ru_utime.tv_usec/1000000.0+
                                   usage.ru_stime.tv_sec+usage.ru_stime.tv_usec/1000000.0;
                 j->usage.faults=(uint64_t)usage.ru_minflt+(uint64_t)usage.ru_majflt;
@@ -248,6 +291,8 @@ int runner_poll(struct runner *r,output_fn output,void *arg)
 #endif
                 if(peak>j->usage.peak_ram) j->usage.peak_ram=peak;
                 diagnose(j);
+            }else if(j->stop==STOP_MIGRATE&&now>=j->stop_deadline){
+                if(kill(-j->pid,SIGKILL)<0&&errno!=ESRCH) return -1;
             }else if(j->stop==STOP_NONE){
                 if(now>=j->start_ms&&now-j->start_ms>=(uint64_t)j->req.time_limit*1000){
                     if(kill(-j->pid,SIGKILL)<0&&errno!=ESRCH) return -1;
@@ -261,6 +306,7 @@ int runner_poll(struct runner *r,output_fn output,void *arg)
 #endif
             }
         }
+        check_start(j);
         // pread se parent ka read position aur child ka write position alag
         // rehta hai. Ek poll mein bounded chunk, taaki dusri jobs starve na ho.
         do { n=pread(j->out_fd,buf,sizeof(buf),j->offset); } while(n<0&&errno==EINTR);
@@ -268,6 +314,12 @@ int runner_poll(struct runner *r,output_fn output,void *arg)
         if(n>0){
             if(output&&output(j->id,j->run_id,buf,(size_t)n,arg)==0) j->offset+=n;
         }else if(j->reaped){
+            group_done=1;
+#ifdef __linux__
+            do { pid=waitpid(-j->pid,NULL,WNOHANG); }while(pid>0||(pid<0&&errno==EINTR));
+            if(pid==0) group_done=0;
+#endif
+            if(!group_done) continue;
             j->finished=1;
             count++;
         }
@@ -278,10 +330,21 @@ int runner_poll(struct runner *r,output_fn output,void *arg)
 int runner_cancel(struct runner *r,int id,uint64_t run_id)
 {
     struct run_job *j=runner_find(r,id,run_id);
+    if(j&&j->stop!=STOP_NONE) return RUN_BUSY;
+    return runner_stop(r,id,run_id,STOP_CANCEL);
+}
+
+int runner_stop(struct runner *r,int id,uint64_t run_id,enum stop_reason why)
+{
+    struct run_job *j=runner_find(r,id,run_id);
     if(!j) return RUN_NOT_FOUND;
-    if(j->reaped||j->stop!=STOP_NONE) return RUN_BUSY;
-    if(kill(-j->pid,SIGKILL)<0&&errno!=ESRCH) return RUN_IO;
-    j->stop=STOP_CANCEL;
+    if(why!=STOP_CANCEL&&why!=STOP_PREEMPT&&why!=STOP_MIGRATE) return RUN_BAD_INPUT;
+    if(j->reaped) return RUN_BUSY;
+    if(j->stop==why) return RUN_OK;
+    if(j->stop!=STOP_NONE&&why!=STOP_CANCEL) return RUN_BUSY;
+    if(kill(-j->pid,why==STOP_MIGRATE?SIGTERM:SIGKILL)<0&&errno!=ESRCH) return RUN_IO;
+    j->stop=why;
+    j->stop_deadline=runner_now_ms()+2000;
     return RUN_OK;
 }
 
@@ -315,6 +378,9 @@ void runner_free(struct runner *r)
             (void)kill(-curr->pid,SIGKILL);
             while(waitpid(curr->pid,NULL,0)<0&&errno==EINTR){}
         }
+#ifdef __linux__
+        while(waitpid(-curr->pid,NULL,0)>0||errno==EINTR){}
+#endif
         run_cleanup(curr);
         free(curr);
         curr=temp;

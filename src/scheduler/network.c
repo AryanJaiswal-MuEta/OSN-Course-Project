@@ -168,7 +168,16 @@ int server_message(const struct protocol_message *msg,void *arg)
             id=(int)wire32(buf); run=wire32(buf+4); j=job_find(s,id);
             if(!j){ err=S_NOT_FOUND; goto done; }
             if(j->worker_id!=p->worker_id||j->run_id!=run){ err=S_STALE_RUN; goto done; }
-            if(msg->type==JOB_ACCEPTED&&n==8){
+            if(msg->type==JOB_OUTPUT){
+                if(n<16) goto done;
+                err=sched_output(s,p->worker_id,id,run,wire64(buf+8),buf+16,n-16);
+                if(err==S_OK) return 0;
+            }else if(msg->type==EXEC_MISS){
+                if(n<=8||n-8>=CONTENT_LEN||memchr(buf+8,0,n-8)) goto done;
+                char key[CONTENT_LEN]; memcpy(key,buf+8,n-8); key[n-8]=0;
+                err=sched_cache_set(s,p->worker_id,key,0);
+                sched_note(s,"Job %d worker %d cache miss; artifact service must resend full bytes",id,p->worker_id);
+            }else if(msg->type==JOB_ACCEPTED&&n==8){
                 err=job_confirm_start(s,id,p->worker_id,run,now);
             }else if(msg->type==JOB_CHECKPOINT){
                 if(n<20||wire32(buf+16)!=n-20) goto done;

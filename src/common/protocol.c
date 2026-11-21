@@ -38,7 +38,7 @@ static uint16_t get16(const char *buf)
 /**  validate using enum defined in header file */
 int protocol_validate_type(uint16_t type)
 {
-    return type >= WORKER_REGISTER && type <= JOB_RESTORE;
+    return type >= WORKER_REGISTER && type <= JOB_OUTPUT;
 }
 
 /** Protocol encoding will happen to load the header and payload into packets for tcp/udp */

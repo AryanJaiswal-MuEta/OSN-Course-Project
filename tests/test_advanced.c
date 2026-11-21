@@ -269,10 +269,36 @@ static void recovery_edges(void)
     (void)run;
 }
 
+static void output_tail(void)
+{
+    struct scheduler s;
+    char buf[16384];
+    int w,a,i;
+    uint64_t run;
+    sched_init(&s); w=worker(&s,2,100);
+    a=add(&s,"alice",1,2,100); run=start(&s,a,w,100);
+    for(i=0;i<4;i++){
+        memset(buf,'A'+i,sizeof(buf));
+        CHECK(sched_output(&s,w,a,run,(uint64_t)i*sizeof(buf),buf,sizeof(buf))==S_OK);
+    }
+    CHECK(job_find(&s,a)->output_size==65536);
+    CHECK(sched_output(&s,w,a,run,65536,"E",1)==S_OK);
+    CHECK(job_find(&s,a)->output[0]=='A'&&job_find(&s,a)->output[65535]=='E');
+    CHECK(sched_output(&s,w,a,run,0,"duplicate",9)==S_BAD_INPUT);
+    CHECK(sched_output(&s,w+1,a,run,65537,"x",1)==S_STALE_RUN);
+    CHECK(sched_migrate(&s,a,200)==S_OK);
+    CHECK(sched_report(&s,w,a,run,FAILED,NULL,"stopped",201)==S_OK);
+    run=start(&s,a,w,202);
+    CHECK(job_find(&s,a)->output_received==0);
+    CHECK(sched_output(&s,w,a,run,0,"next run",8)==S_OK);
+    CHECK(job_find(&s,a)->output_size==65536&&job_find(&s,a)->output[65535]=='n');
+    conserved(&s); sched_free(&s);
+}
+
 int main(void)
 {
     dependencies(); quota_and_placement(); loss_and_capacity();
-    preemption_and_migration(); reservation_races(); recovery_edges();
+    preemption_and_migration(); reservation_races(); recovery_edges(); output_tail();
     printf("PASS advanced scheduler: %d checks\n",checks);
     return 0;
 }

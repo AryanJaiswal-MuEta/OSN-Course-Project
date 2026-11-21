@@ -31,7 +31,7 @@ static int64_t now_ms(void)
     return (int64_t)ts.tv_sec*1000+ts.tv_nsec/1000000;
 }
 
-static int wait_reply(int fd,uint64_t nonce,struct worker_endpoint *out)
+static int wait_reply(int fd,uint64_t nonce,struct worker_endpoint *out,const volatile sig_atomic_t *stop)
 {
     struct discovery_packet reply;
     struct sockaddr_in from;
@@ -45,6 +45,7 @@ static int wait_reply(int fd,uint64_t nonce,struct worker_endpoint *out)
     if(now<0) return DISCOVERY_IO;
     end=now+2000;
     for(;;){
+        if(stop&&*stop) return DISCOVERY_TIMEOUT;
         now=now_ms();
         if(now<0) return DISCOVERY_IO;
         if(now>=end) return DISCOVERY_TIMEOUT;
@@ -72,6 +73,12 @@ static int wait_reply(int fd,uint64_t nonce,struct worker_endpoint *out)
 
 int worker_find_scheduler(const struct worker_config *cfg,struct worker_endpoint *out)
 {
+    return worker_find_scheduler_cancel(cfg,out,NULL);
+}
+
+int worker_find_scheduler_cancel(const struct worker_config *cfg,struct worker_endpoint *out,
+                                 const volatile sig_atomic_t *stop)
+{
     struct discovery_packet req={.kind=DISCOVERY_REQUEST};
     struct worker_endpoint ep={0};
     struct in_addr ip;
@@ -84,14 +91,15 @@ int worker_find_scheduler(const struct worker_config *cfg,struct worker_endpoint
     fd=discovery_socket(0,1);
     if(fd>=0){
         for(i=0;i<3;i++){
+            if(stop&&*stop){ close(fd); return DISCOVERY_TIMEOUT; }
             if(random_nonce(&req.nonce)<0){ ret=DISCOVERY_IO; break; }
             ret=discovery_send(fd,"255.255.255.255",(uint16_t)cfg->discovery_port,&req);
-            if(ret==DISCOVERY_OK) ret=wait_reply(fd,req.nonce,out);
+            if(ret==DISCOVERY_OK) ret=wait_reply(fd,req.nonce,out,stop);
             if(ret==DISCOVERY_OK) break;
         }
         close(fd);
     }
-    if(ret==DISCOVERY_OK||!cfg->has_fallback) return ret;
+    if(ret==DISCOVERY_OK||!cfg->has_fallback||(stop&&*stop)) return ret;
     // Broadcast attempts khatam, ab configured endpoint use kar sakte hain.
     strcpy(ep.ip,cfg->scheduler_ip);
     ep.port=cfg->scheduler_port;

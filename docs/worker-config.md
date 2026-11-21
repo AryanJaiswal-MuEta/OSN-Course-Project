@@ -1,5 +1,7 @@
 # Worker startup configuration — 2 November catch-up
 
+Current production worker integration is documented in [worker integration](worker-integration.md). The original slice below is historical; discovery/connection/registration are now implemented.
+
 This small Member 2 slice adds argument parsing and capacity detection/clamping from the missed 29 October plan. It does not implement discovery or connect to the scheduler.
 
 Project files: `include/worker_config.h` and `src/worker/config.c`. Merge their Makefile additions to compile the module into `librunner.a`. Tests live in `tests/test_worker_config.c`.

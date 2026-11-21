@@ -2,6 +2,8 @@
 
 The scheduler core and TCP adapter are implemented. Build on Linux/macOS:
 
+**Worker handoff update:** the [Member 2 worker implementation](worker-integration.md) now executes real jobs. One-worker and two-worker loopback integration tests have been added there; the scheduler-only fixture tests described below still remain separate from those real-process tests. Output frames are now retained through `sched_output()`.
+
 ```sh
 make build/scheduler
 ./build/scheduler 8080 PRIORITY -discovery-port 9999
@@ -9,7 +11,7 @@ make test-scheduler
 make test
 ```
 
-The executable takes real connections and uses the shared framing, transport and UDP discovery implementation. Tests use simulated protocol peers, not the repository's production worker. That worker still prints JOB_ASSIGN without executing it and sends no heartbeats. Do not describe this handoff as a complete distributed cluster demo.
+The executable takes real connections and uses the shared framing, transport and UDP discovery implementation. The scheduler-only tests use simulated protocol peers; the Member 2 handoff adds separate tests with real workers and child processes. Member 3's production client and artifact/follow/cron services are still needed for the full distributed cluster interface.
 
 ## Member 1 coverage
 

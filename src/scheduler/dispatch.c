@@ -26,6 +26,7 @@ int job_reserve(struct scheduler *s,int id,int worker_id,uint64_t now,uint64_t *
     j->dispatch_pending=1;
     j->dispatch_ms=now;
     j->checkpoint_seq=0;
+    j->output_received=0;
     j->stop_sent=S_STOP_NONE;
     j->reason[0]='\0';
     *run_id=j->run_id;

@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -56,6 +57,60 @@ int run_prepare(struct run_job *j,const char *path)
     return 0;
 }
 
+int run_state_prepare(struct run_job *j,const void *state,size_t size)
+{
+    int fd;
+    size_t off=0;
+    ssize_t n;
+    if(mkdirat(j->dir_fd,"checkpoint",0700)<0) return -1;
+    j->checkpoint_fd=openat(j->dir_fd,"checkpoint",O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
+    if(j->checkpoint_fd<0) return -1;
+    if(!state) return 0;
+    fd=openat(j->checkpoint_fd,"state",O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC,0600);
+    if(fd<0) return -1;
+    while(off<size){
+        n=write(fd,(const char *)state+off,size-off);
+        if(n<0&&errno==EINTR) continue;
+        if(n<=0){ close(fd); return -1; }
+        off+=(size_t)n;
+    }
+    return close(fd);
+}
+
+int runner_checkpoint(struct run_job *j,unsigned char **buf,size_t *size)
+{
+    struct stat a,b,c;
+    unsigned char *ptr;
+    size_t off=0;
+    ssize_t n;
+    int fd;
+    *buf=NULL; *size=0;
+    fd=openat(j->checkpoint_fd,"state",O_RDONLY|O_NOFOLLOW|O_CLOEXEC|O_NONBLOCK);
+    if(fd<0) return errno==ENOENT?0:-1;
+    if(fstat(fd,&a)<0||!S_ISREG(a.st_mode)||a.st_size<0||a.st_size>CHECKPOINT_CAP){ close(fd); return -1; }
+    ptr=malloc((size_t)a.st_size+1);
+    if(!ptr){ close(fd); return -1; }
+    while(off<(size_t)a.st_size){
+        n=read(fd,ptr+off,(size_t)a.st_size-off);
+        if(n<0&&errno==EINTR) continue;
+        if(n<=0){ free(ptr); close(fd); return 0; }
+        off+=(size_t)n;
+    }
+    // Atomic rename ke beech purana inode padh liya toh next sample pe retry.
+    if(fstat(fd,&b)<0||fstatat(j->checkpoint_fd,"state",&c,AT_SYMLINK_NOFOLLOW)<0||
+       a.st_ino!=c.st_ino||a.st_dev!=c.st_dev||a.st_size!=b.st_size||a.st_mtime!=b.st_mtime||a.st_ctime!=b.st_ctime
+#ifdef __APPLE__
+       ||a.st_mtimespec.tv_nsec!=b.st_mtimespec.tv_nsec||a.st_ctimespec.tv_nsec!=b.st_ctimespec.tv_nsec
+#else
+       ||a.st_mtim.tv_nsec!=b.st_mtim.tv_nsec||a.st_ctim.tv_nsec!=b.st_ctim.tv_nsec
+#endif
+       ){
+        free(ptr); close(fd); return 0;
+    }
+    close(fd); *buf=ptr; *size=off;
+    return 1;
+}
+
 static int clear_dir(int fd)
 {
     struct dirent *entry;
@@ -86,6 +141,7 @@ static int clear_dir(int fd)
 int run_cleanup(struct run_job *j)
 {
     int ok=0;
+    if(j->checkpoint_fd>=0){ close(j->checkpoint_fd); j->checkpoint_fd=-1; }
     if(j->out_fd>=0){ close(j->out_fd); j->out_fd=-1; }
     if(j->err_fd>=0){ close(j->err_fd); j->err_fd=-1; }
     if(j->dir_fd>=0){

@@ -5,7 +5,8 @@
 #include "model.h"
 
 enum run_err { RUN_OK=0,RUN_BAD_INPUT,RUN_NO_MEMORY,RUN_NOT_FOUND,RUN_IO,RUN_BUSY };
-enum stop_reason { STOP_NONE,STOP_CANCEL,STOP_TIMEOUT,STOP_MEMORY };
+enum stop_reason { STOP_NONE,STOP_CANCEL,STOP_TIMEOUT,STOP_MEMORY,STOP_PREEMPT,STOP_MIGRATE };
+enum run_start { RUN_START_PENDING,RUN_START_OK,RUN_START_FAILED,RUN_START_UNCONFIRMED };
 
 struct run_job {
     int id;
@@ -14,6 +15,7 @@ struct run_job {
     char dir[128];
     int dir_fd;
     int out_fd;
+    int checkpoint_fd;
     int err_fd;
     off_t offset;
     uint64_t start_ms;
@@ -26,6 +28,10 @@ struct run_job {
     int status;
     int setup_stage;
     int setup_errno;
+    enum run_start exec_state;
+    int exec_eof;
+    int start_reported;
+    uint64_t stop_deadline;
     unsigned char err_buf[2*sizeof(int)];
     size_t err_count;
     char reason[160];
@@ -46,6 +52,10 @@ typedef int (*output_fn)(int id,uint64_t run_id,const void *buf,size_t len,void 
 int runner_init(struct runner *r);
 int runner_start(struct runner *r,int id,uint64_t run_id,
                  const struct job_req *req,char *const args[]);
+int runner_start_state(struct runner *r,int id,uint64_t run_id,
+                       const struct job_req *req,char *const args[],const void *state,size_t size);
+int runner_stop(struct runner *r,int id,uint64_t run_id,enum stop_reason why);
+int runner_checkpoint(struct run_job *j,unsigned char **buf,size_t *size);
 struct run_job *runner_find(struct runner *r,int id,uint64_t run_id);
 int runner_poll(struct runner *r,output_fn output,void *arg);
 int runner_cancel(struct runner *r,int id,uint64_t run_id);

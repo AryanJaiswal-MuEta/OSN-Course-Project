@@ -39,7 +39,13 @@ enum protocol_type
     JOB_CANCEL = 18,
     JOB_MIGRATE = 19,
     SCHED_REPLY = 20,
-    JOB_RESTORE = 21
+    JOB_RESTORE = 21,
+    EXEC_BEGIN = 22,
+    EXEC_CHUNK = 23,
+    EXEC_END = 24,
+    EXEC_REFERENCE = 25,
+    EXEC_MISS = 26,
+    JOB_OUTPUT = 27
 };
 
 /** Standardized error codes carried in protocol error responses. */

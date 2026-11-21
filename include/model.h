@@ -70,6 +70,9 @@ struct job {
     uint64_t stop_ms;
     int preempt_worker;
     char content[CONTENT_LEN];
+    unsigned char *output;
+    size_t output_size;
+    uint64_t output_received;
 
     // Dependency IDs submit time pe snapshot hain; baad ke group members nahi judenge.
     int *deps;

@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
 #include "worker_loop.h"
 
@@ -58,18 +59,54 @@ int worker_loop_cancel(struct worker_loop *loop,int id,uint64_t run_id)
     return err;
 }
 
+static int forward_output(int id,uint64_t run_id,const void *buf,size_t len,void *arg)
+{
+    struct worker_loop *loop=arg;
+    struct run_job *j=runner_find(&loop->runner,id,run_id);
+    if(!j||!loop->hooks.output) return 1;
+    if(loop->hooks.start&&!j->start_reported) return 1;
+    return loop->hooks.output(id,run_id,buf,len,loop->arg);
+}
+
+static int report_start(struct worker_loop *loop,struct run_job *j)
+{
+    struct worker_start start;
+    if(j->start_reported||!loop->hooks.start) return 0;
+    if(j->exec_state==RUN_START_PENDING) return 1;
+    memset(&start,0,sizeof(start));
+    start.id=j->id;
+    start.run_id=j->run_id;
+    start.exec_state=j->exec_state;
+    start.stage=j->setup_stage;
+    start.error=j->setup_errno;
+    if(start.exec_state==RUN_START_OK)
+        snprintf(start.reason,sizeof(start.reason),"Program exec confirmed");
+    else if(start.exec_state==RUN_START_FAILED)
+        snprintf(start.reason,sizeof(start.reason),"Setup/exec failed at stage %d: %s",
+                 start.stage,strerror(start.error));
+    else snprintf(start.reason,sizeof(start.reason),"Start unconfirmed: child stopped before observation");
+    if(loop->hooks.start(&start,loop->arg)!=0) return 1;
+    j->start_reported=1;
+    return 0;
+}
+
 static int poll_jobs(struct worker_loop *loop)
 {
     struct run_job *curr,*next;
     struct worker_result result;
     int err;
-    if(runner_poll(&loop->runner,loop->hooks.output,loop->arg)<0) return -1;
+    if(runner_poll(&loop->runner,forward_output,loop)<0) return -1;
     for(curr=loop->runner.head;curr&&!loop->stop;curr=next){
         next=curr->next;
+        // Start outcome accept hone tak output/result hold hoga. Fast job
+        // pehle hi exit kar de tab bhi callback order start -> output -> result.
+        if(report_start(loop,curr)!=0) continue;
+        if(loop->stop) break;
         if(!curr->finished||!loop->hooks.result) continue;
         memset(&result,0,sizeof(result));
         result.id=curr->id;
         result.run_id=curr->run_id;
+        result.exec_state=curr->exec_state;
         result.state=curr->state;
         result.usage=curr->usage;
         memcpy(result.reason,curr->reason,sizeof(result.reason));

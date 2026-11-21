@@ -25,6 +25,7 @@ void sched_free(struct scheduler *s)
         temp=curr->next;
         free(curr->deps);
         free(curr->checkpoint);
+        free(curr->output);
         free(curr);
         curr=temp;
     }

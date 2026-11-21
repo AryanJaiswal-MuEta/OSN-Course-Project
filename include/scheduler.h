@@ -81,5 +81,7 @@ int sched_checkpoint(struct scheduler *s,int worker_id,int id,uint64_t run_id,
 int sched_cache_set(struct scheduler *s,int worker_id,const char *key,int present);
 int sched_content_set(struct scheduler *s,int id,const char *key);
 int sched_cached(const struct worker *w,const char *key);
+int sched_output(struct scheduler *s,int worker_id,int id,uint64_t run,
+                  uint64_t offset,const void *buf,size_t size);
 
 #endif

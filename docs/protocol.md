@@ -2,6 +2,8 @@
 
 **21 November extension:** types 8–21 and confirmed-exec JOB_ACCEPTED semantics are documented in [scheduler integration](scheduler-integration.md#wire-additions-for-member-23). Existing payload layouts below are retained; the extension guide describes restore-before-assignment and optional dependencies. Type validation now accepts 1–21.
 
+**Worker extension:** types 22–27 add executable transfer/reference/miss and output frames, documented in [worker integration](worker-integration.md#additional-wire-messages). Shared type validation now accepts 1–27.
+
 
 ## 1. Design Rules
 

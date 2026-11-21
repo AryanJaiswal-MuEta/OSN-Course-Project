@@ -2,6 +2,8 @@
 
 **21 November update:** Member 1's scheduler implementation and adapter are now covered by the [scheduler handoff](scheduler-integration.md). The table below is historical; worker execution message handling, Member 3 services and joint release checks are still pending and are not marked complete by scheduler fixture tests.
 
+**Member 2 update:** worker execution, cache/checkpoint receive paths and real one/two-worker loopback tests are now in the [worker handoff](worker-integration.md). Remaining gates are Member 3's production services, cryptographic identity coordination, macOS and real multi-machine validation.
+
 This supersedes the dates in remaining-plan.md. Target: a tested package on 30 November; official deadline 2 December. Estimates are focused hours across Members 1 and 2 combined, separate from Member 3's effort.
 
 Today: restored the dispatch and worker start-confirmation builds after the sync, and added FIFO and PRIORITY selection with 10-second aging. The selector returns one job/worker pair without taking a reservation. The scheduler adapter should reserve that pair before choosing another; pending reservations are skipped by selection. The selector picks the first eligible worker with enough resources; load and cache preferences come later. Production network wiring is not included.

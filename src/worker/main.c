@@ -1,11 +1,6 @@
-/**
- * @file main.c
- * @brief Worker main file: discovery, connects to scheduler, registers capacity and executes jobs
- */
 #include <arpa/inet.h>
 #include <errno.h>
-#include <netinet/in.h>
-#include <poll.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,216 +8,151 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include "discovery.h"
-#include "protocol.h"
-#include "transport.h"
-#include "worker_discovery.h"
-#include "worker_loop.h"
-/**holds state for worker instance */
-struct worker_node
+#include "logging.h"
+#include "node.h"
+
+static volatile sig_atomic_t drain_requested,abort_requested;
+static void interrupt(int sig)
 {
-    struct worker_config cfg;
-    struct worker_loop w_loop;
-    struct transport conn_trans;
-    int connection_fd;
-};
-static struct worker_loop *active_worker_loop = NULL;
-static void worker_exit_signal(int sig)
-{
-    (void)sig;
-    if (active_worker_loop)
-        worker_loop_stop(active_worker_loop);
+    if(sig==SIGTERM) abort_requested=1;
+    drain_requested=1;
 }
-static void put32(unsigned char *p, uint32_t value)
+
+static int connect_to(const struct worker_endpoint *ep)
 {
-    p[0] = (unsigned char)(value >> 24);
-    p[1] = (unsigned char)(value >> 16);
-    p[2] = (unsigned char)(value >> 8);
-    p[3] = (unsigned char)value;
-}
-static void put64(unsigned char *p, uint64_t value)
-{
-    int i;
-    for (i = 7; i >= 0; i--)
-    {
-        p[i] = (unsigned char)value;
-        value >>= 8;
+    struct sockaddr_in addr={0};
+    struct pollfd p;
+    int fd,flags,err=0;
+    socklen_t len=sizeof(err);
+    uint64_t end=runner_now_ms()+5000;
+    fd=socket(AF_INET,SOCK_STREAM,0); if(fd<0) return -1;
+    flags=fcntl(fd,F_GETFL);
+    if(flags<0||fcntl(fd,F_SETFL,flags|O_NONBLOCK)<0||fcntl(fd,F_SETFD,FD_CLOEXEC)<0) goto fail;
+    addr.sin_family=AF_INET; addr.sin_port=htons((uint16_t)ep->port);
+    if(inet_pton(AF_INET,ep->ip,&addr.sin_addr)!=1) goto fail;
+    if(connect(fd,(struct sockaddr *)&addr,sizeof(addr))==0) return fd;
+    if(errno!=EINPROGRESS) goto fail;
+    p=(struct pollfd){fd,POLLOUT,0};
+    while(runner_now_ms()<end&&!abort_requested&&!drain_requested){
+        int ret=poll(&p,1,100);
+        if(ret<0&&errno==EINTR) continue;
+        if(ret<0) break;
+        if(ret>0){
+            if(getsockopt(fd,SOL_SOCKET,SO_ERROR,&err,&len)<0||err){ if(err) errno=err; break; }
+            return fd;
+        }
     }
+fail:
+    close(fd); return -1;
 }
-/**encode and send worker capacity to scheduler */
-static int send_worker_registration(struct worker_node *node)
+
+static void io(struct worker_loop *loop,int fd,short events,void *arg)
 {
-    unsigned char payload_buf[18];
-    put32(payload_buf, (uint32_t)node->cfg.capacity.cores);
-    put64(payload_buf + 4, (uint64_t)node->cfg.capacity.ram);
-    put32(payload_buf + 12, (uint32_t)node->cfg.capacity.gpu);
-    // zero length name
-    payload_buf[16] = 0;
-    payload_buf[17] = 0;
-    struct protocol_message reg_msg;
-    reg_msg.type = WORKER_REGISTER;
-    reg_msg.request_id = 1;
-    reg_msg.payload = (const char *)payload_buf;
-    reg_msg.payload_len = sizeof(payload_buf);
-    return transport_queue(&node->conn_trans, &reg_msg);
-}
-// message callback when scheduler sends something
-static int on_scheduler_message(const struct protocol_message *msg, void *arg)
-{
-    struct worker_node *node = arg;
-    (void)node;
-    if (!msg)
-        return -1;
-    if (msg->type == JOB_ASSIGN)
-    {
-        // job assigned to this worker
-        printf("[WORKER] Received JOB_ASSIGN message\n");
-    }
-    return 0;
-}
-/**io callback for worker loop */
-static void worker_io_event(struct worker_loop *loop, int fd, short events, void *arg)
-{
-    struct worker_node *node = arg;
-    if (events & POLLNVAL)
-    {
-        worker_loop_stop(loop);
+    struct worker_node *n=arg;
+    int err;
+    if(fd==STDIN_FILENO){
+        char buf[64];
+        ssize_t count=read(fd,buf,sizeof(buf));
+        if(count<=0){ if(!count||errno!=EAGAIN) worker_loop_watch(loop,WORKER_ADMIN,-1,0); return; }
+        for(ssize_t i=0;i<count;i++){
+            if(buf[i]=='\n'){
+                n->admin[n->admin_len]=0;
+                if(!strcmp(n->admin,"drain")) n->draining=1;
+                else if(n->admin_len) log_line("WORKER","Local command: drain");
+                n->admin_len=0;
+            }else if(buf[i]!='\r'){
+                if(n->admin_len+1<sizeof(n->admin)) n->admin[n->admin_len++]=buf[i];
+                else n->admin_len=0;
+            }
+        }
         return;
     }
-    if (events & (POLLIN | POLLHUP | POLLERR))
-    {
-        int r = transport_read(&node->conn_trans, on_scheduler_message, node);
-        if (r != TRANSPORT_OK && r != TRANSPORT_WOULD_BLOCK)
-        {
-            printf("[WORKER] Scheduler disconnected\n");
-            worker_loop_stop(&node->w_loop);
-            return;
-        }
+    if(events&POLLNVAL) goto lost;
+    if(events&(POLLIN|POLLHUP|POLLERR)){
+        err=transport_read(&n->trans,worker_message,n);
+        if(err!=TRANSPORT_OK&&err!=TRANSPORT_WOULD_BLOCK) goto lost;
     }
-    if (events & POLLOUT)
-    {
-        int r = transport_flush(&node->conn_trans);
-        if (r != TRANSPORT_OK && r != TRANSPORT_WOULD_BLOCK)
-        {
-            fprintf(stderr, "[WORKER] Send failed: %s\n", transport_error_name(r));
-            worker_loop_stop(loop);
-            return;
-        }
+    if(events&POLLOUT){
+        err=transport_flush(&n->trans);
+        if(err!=TRANSPORT_OK&&err!=TRANSPORT_WOULD_BLOCK) goto lost;
     }
-    // update poll mask if pending bytes exist
-    short want = POLLIN;
-    if (transport_wants_write(&node->conn_trans))
-        want |= POLLOUT;
-    if (worker_loop_watch(loop, WORKER_CONN, fd, want) < 0)
-        worker_loop_stop(loop);
+    if(worker_loop_watch(loop,WORKER_CONN,fd,POLLIN|(transport_wants_write(&n->trans)?POLLOUT:0))<0) goto lost;
+    return;
+lost:
+    n->lost=1; worker_loop_stop(loop);
 }
-/**tick callback every 100ms  */
-static void worker_tick_event(struct worker_loop *loop, uint64_t now, void *arg)
+
+static void tick(struct worker_loop *loop,uint64_t now,void *arg)
 {
-    (void)loop;
-    (void)now;
-    (void)arg;
-    // heartbeat to scheduler every 2 sec
+    struct worker_node *n=arg;
+    if(abort_requested){ worker_loop_stop(loop); return; }
+    if(drain_requested) n->draining=1;
+    worker_tick(loop,now,n);
 }
-/** streaming output of running jobs*/
-static int worker_output_stream(int id, uint64_t run_id, const void *buf, size_t len, void *arg)
+
+static uint64_t cache_limit(void)
 {
-    (void)id;
-    (void)run_id;
-    (void)buf;
-    (void)len;
-    (void)arg;
-    return 0;
+    const char *s=getenv("OSN_CACHE_SIZE_MB");
+    char *end;
+    unsigned long long value;
+    if(!s) return 512u*1048576u;
+    if(!*s||strspn(s,"0123456789")!=strlen(s)) return 0;
+    errno=0; value=strtoull(s,&end,10);
+    if(errno||*end||!value||value>UINT64_MAX/1048576) return 0;
+    return (uint64_t)value*1048576;
 }
-/** result callback when a job exits*/
-static int worker_job_result(const struct worker_result *res, void *arg)
+
+int main(int argc,char **argv)
 {
-    (void)res;
-    (void)arg;
-    return 0;
-}
-int main(int argc, char **argv)
-{
-    struct worker_node worker;
-    memset(&worker, 0, sizeof(worker));
-    char parse_err[256];
-    if (worker_config_parse(argc, argv, &worker.cfg, parse_err, sizeof(parse_err)) < 0)
-    {
-        fprintf(stderr, "Worker config error: %s\n", parse_err);
-        return 1;
-    }
-    struct resource total_capacity;
-    if (worker_capacity_detect(&total_capacity) < 0)
-    {
-        perror("worker capacity");
-        return 1;
-    }
-    char limit_warn[256];
-    if (worker_capacity_limit(&worker.cfg, total_capacity, limit_warn, sizeof(limit_warn)) < 0)
-        return 1;
-    if (limit_warn[0])
-        printf("[WORKER] %s\n", limit_warn);
+    struct worker_node n={0};
+    struct resource physical;
     struct worker_endpoint ep;
-    printf("[WORKER] Discovering scheduler on port %d...\n", worker.cfg.discovery_port);
-    if (worker_find_scheduler(&worker.cfg, &ep) != DISCOVERY_OK)
-    {
-        fprintf(stderr, "[WORKER] Could not discover scheduler and no fallback available\n");
-        return 1;
+    struct worker_hooks hooks={.io=io,.tick=tick,.output=worker_output,.result=worker_result,.start=worker_started};
+    unsigned char reg[18]={0};
+    char error[256],default_dir[80];
+    const char *dir=getenv("OSN_CACHE_DIR");
+    int status=0,stdin_flags=fcntl(STDIN_FILENO,F_GETFL);
+    n.fd=-1;
+    if(worker_config_parse(argc,argv,&n.cfg,error,sizeof(error))<0){ fprintf(stderr,"%s\n",error); return 1; }
+    if(worker_capacity_detect(&physical)<0||worker_capacity_limit(&n.cfg,physical,error,sizeof(error))<0){ perror("worker capacity"); return 1; }
+    if(error[0]) log_line("WORKER","%s",error);
+    if(!dir){ snprintf(default_dir,sizeof(default_dir),"/tmp/osn_cache_%ld",(long)geteuid()); dir=default_dir; }
+    if(worker_cache_init(&n.cache,dir,cache_limit())<0){ perror("worker cache"); return 1; }
+    n.cache.changed=worker_cache_changed; n.cache.arg=&n;
+    signal(SIGPIPE,SIG_IGN); signal(SIGINT,interrupt); signal(SIGTERM,interrupt);
+    while(!abort_requested&&!drain_requested){
+        log_line("WORKER","Discovering scheduler on UDP %d",n.cfg.discovery_port);
+        if(worker_find_scheduler_cancel(&n.cfg,&ep,&drain_requested)!=DISCOVERY_OK){
+            if(abort_requested||drain_requested) break;
+            log_line("WORKER","Discovery failed; retrying");
+            poll(NULL,0,500); continue;
+        }
+        if(abort_requested||drain_requested) break;
+        log_line("WORKER","%s %s:%d",ep.used_fallback?"Fallback":"Discovered",ep.ip,ep.port);
+        n.fd=connect_to(&ep);
+        if(n.fd<0){ if(!abort_requested&&!drain_requested) poll(NULL,0,500); continue; }
+        if(transport_init(&n.trans,n.fd,1)!=TRANSPORT_OK){ close(n.fd); status=1; break; }
+        if(worker_loop_init(&n.loop,&hooks,&n)!=RUN_OK){ transport_free(&n.trans); status=1; break; }
+        n.worker_id=n.lost=n.draining=n.drain_sent=0; n.heartbeat=0; n.registered_ms=runner_now_ms();
+        worker_p32(reg,(uint32_t)n.cfg.capacity.cores); worker_p64(reg+4,(uint64_t)n.cfg.capacity.ram);
+        worker_p32(reg+12,(uint32_t)n.cfg.capacity.gpu);
+        struct protocol_message message={WORKER_REGISTER,1,(const char *)reg,sizeof(reg)};
+        if(worker_loop_watch(&n.loop,WORKER_CONN,n.fd,POLLIN|POLLOUT)<0||transport_queue(&n.trans,&message)!=TRANSPORT_OK){
+            n.lost=1;
+        }else{
+            // Stdin optional hai; redirected EOF ko loop se remove kar denge.
+            worker_loop_watch(&n.loop,WORKER_ADMIN,STDIN_FILENO,POLLIN);
+            if(worker_loop_run(&n.loop)<0){ perror("worker loop"); n.lost=1; }
+        }
+        int drained=n.draining&&!n.lost;
+        n.worker_id=0;
+        // Reconnect se pehle purane children kill/reap + directories clean hona zaroori hai.
+        worker_loop_free(&n.loop); worker_tasks_free(&n); transport_free(&n.trans); n.fd=-1;
+        if(drained||abort_requested||drain_requested) break;
+        log_line("WORKER","Connection lost; local jobs stopped, rediscovering");
+        poll(NULL,0,500);
     }
-    printf("[WORKER] %s %s:%d\n", ep.used_fallback ? "Using fallback" : "Found scheduler",
-           ep.ip, ep.port);
-    // connect to scheduler over tcp
-    worker.connection_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (worker.connection_fd < 0)
-    {
-        perror("socket");
-        return 1;
-    }
-    struct sockaddr_in s_addr;
-    memset(&s_addr, 0, sizeof(s_addr));
-    s_addr.sin_family = AF_INET;
-    s_addr.sin_port = htons((uint16_t)ep.port);
-    inet_pton(AF_INET, ep.ip, &s_addr.sin_addr);
-    if (connect(worker.connection_fd, (struct sockaddr *)&s_addr, sizeof(s_addr)) < 0)
-    {
-        perror("connect to scheduler");
-        close(worker.connection_fd);
-        return 1;
-    }
-    // Peer close ho toh send error handle karna hai, process terminate nahi.
-    if (signal(SIGPIPE, SIG_IGN) == SIG_ERR ||
-        transport_init(&worker.conn_trans, worker.connection_fd, 1) != TRANSPORT_OK)
-    {
-        close(worker.connection_fd);
-        return 1;
-    }
-
-    struct worker_hooks hooks = {
-        .io = worker_io_event, .tick = worker_tick_event,
-        .output = worker_output_stream, .result = worker_job_result
-    };
-    if (worker_loop_init(&worker.w_loop, &hooks, &worker) != RUN_OK)
-    {
-        transport_free(&worker.conn_trans);
-        return 1;
-    }
-
-    int status = 1;
-    // Queue flush POLLOUT pe hoga; partial write pe registration drop nahi hogi.
-    if (send_worker_registration(&worker) != TRANSPORT_OK ||
-        worker_loop_watch(&worker.w_loop, WORKER_CONN, worker.connection_fd, POLLIN | POLLOUT) < 0)
-    {
-        fprintf(stderr, "[WORKER] Could not queue registration\n");
-        goto done;
-    }
-    active_worker_loop = &worker.w_loop;
-    signal(SIGINT, worker_exit_signal);
-    signal(SIGTERM, worker_exit_signal);
-    printf("[WORKER] Registration queued (cores=%d ram=%lldMB gpu=%d)\n",
-           worker.cfg.capacity.cores, worker.cfg.capacity.ram, worker.cfg.capacity.gpu);
-    status = worker_loop_run(&worker.w_loop) < 0;
-    active_worker_loop = NULL;
-done:
-    worker_loop_free(&worker.w_loop);
-    transport_free(&worker.conn_trans);
+    worker_cache_free(&n.cache);
+    if(stdin_flags>=0) (void)fcntl(STDIN_FILENO,F_SETFL,stdin_flags);
     return status;
 }

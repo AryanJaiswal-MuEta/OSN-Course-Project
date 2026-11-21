@@ -4,6 +4,7 @@
 #include "runner.h"
 
 int run_prepare(struct run_job *j,const char *path);
+int run_state_prepare(struct run_job *j,const void *state,size_t size);
 int run_cleanup(struct run_job *j);
 void run_sample(struct run_job *j);
 

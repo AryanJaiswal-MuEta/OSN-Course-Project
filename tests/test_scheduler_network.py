@@ -285,8 +285,9 @@ def cli():
     print("PASS scheduler CLI validation")
 
 
-cli()
-pipeline()
-migration()
-preemption_and_drain()
-recovery()
+if __name__ == "__main__":
+    cli()
+    pipeline()
+    migration()
+    preemption_and_drain()
+    recovery()
