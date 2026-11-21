@@ -83,7 +83,7 @@ int job_can_move(enum job_state from, enum job_state to)
     case WAITING:
         return to == QUEUED || to == CANCELLED;
     case QUEUED:
-        return to == RUNNING || to == CANCELLED || to == FAILED;
+        return to == RUNNING || to == CANCELLED || to == FAILED || to == LOST;
     case RUNNING:
         return to == COMPLETED || to == FAILED || to == CANCELLED || to == LOST || to == QUEUED;
     case LOST:
@@ -141,6 +141,7 @@ int worker_set_state(struct scheduler *s, int id, enum worker_state state)
     if (state == DEAD && (w->jobs || w->reserved_jobs))
         return S_BUSY;
     w->state = state;
+    sched_note(s,"Worker %d -> %s",id,worker_state_name(state));
     return S_OK;
 }
 
@@ -181,6 +182,10 @@ int job_finish(struct scheduler *s, int id, uint64_t run_id,
     j->worker_id = 0;
     j->end_ms = now;
     snprintf(j->reason, sizeof(j->reason), "%s", reason ? reason : "");
+    j->stop_pending=S_STOP_NONE;
+    sched_release_holds(s,id);
+    sched_note(s,"Job %d RUNNING -> %s: %s",id,job_state_name(state),j->reason);
+    sched_dependencies(s,now);
     return S_OK;
 }
 
@@ -199,5 +204,8 @@ int job_cancel_pending(struct scheduler *s, int id, const char *reason, uint64_t
     j->state = CANCELLED;
     j->end_ms = now;
     snprintf(j->reason, sizeof(j->reason), "%s", reason ? reason : "");
+    sched_release_holds(s,id);
+    sched_note(s,"Job %d -> CANCELLED: %s",id,j->reason);
+    sched_dependencies(s,now);
     return S_OK;
 }

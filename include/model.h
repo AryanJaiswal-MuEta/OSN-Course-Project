@@ -8,6 +8,14 @@
 #define PATH_LEN 512
 #define QUEUE_CAP 1024
 #define MAX_ATTEMPTS 3
+#define CONTENT_LEN 129
+#define CHECKPOINT_CAP (512u*1024u)
+
+enum sched_stop { S_STOP_NONE,S_STOP_CANCEL,S_STOP_PREEMPT,S_STOP_MIGRATE };
+struct cache_entry {
+    char key[CONTENT_LEN];
+    struct cache_entry *next;
+};
 
 enum job_state {
     WAITING,QUEUED,RUNNING,COMPLETED,FAILED,CANCELLED,LOST,FAILED_PERMANENT
@@ -58,15 +66,19 @@ struct job {
     int hold_for;
     int migrated_from;
     int stop_pending;
+    int stop_sent;
+    uint64_t stop_ms;
+    int preempt_worker;
+    char content[CONTENT_LEN];
 
-    // Abhi dependencies/checkpoints ka behaviour nahi hai, bas lifecycle
-    // ke fields pehle se hain taaki baad mein har file rewrite na karni pade.
+    // Dependency IDs submit time pe snapshot hain; baad ke group members nahi judenge.
     int *deps;
     size_t dep_count;
     struct telemetry usage;
     unsigned char *checkpoint;
     size_t checkpoint_size;
     uint64_t checkpoint_no;
+    uint64_t checkpoint_seq;
     uint64_t checkpoint_ms;
     char reason[160];
     struct job *next;
@@ -81,6 +93,8 @@ struct worker {
     size_t reserved_jobs;
     uint64_t heartbeat_ms;
     double load;
+    int preempt_for;
+    struct cache_entry *cache;
     struct worker *next;
 };
 
@@ -95,6 +109,9 @@ struct scheduler {
     int next_job;
     int next_worker;
     uint64_t next_run;
+    // Callback sirf log/event publish kare; iske andar scheduler mutate mat karo.
+    void (*event)(const char *msg,void *arg);
+    void *event_arg;
 };
 
 #endif

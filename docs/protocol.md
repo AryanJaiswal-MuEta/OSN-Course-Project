@@ -1,5 +1,7 @@
 ### This markdown file is the documentation for the protocol used in the given codebase.It will include the bytes breakdown of protocol messages, their structure, and any relevant details for other team members to interact with the protocol effectively.
 
+**21 November extension:** types 8–21 and confirmed-exec JOB_ACCEPTED semantics are documented in [scheduler integration](scheduler-integration.md#wire-additions-for-member-23). Existing payload layouts below are retained; the extension guide describes restore-before-assignment and optional dependencies. Type validation now accepts 1–21.
+
 
 ## 1. Design Rules
 

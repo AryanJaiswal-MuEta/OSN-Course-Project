@@ -38,6 +38,13 @@ int sched_register_worker(struct sched_service *svc,struct resource total,
 int sched_submit(struct sched_service *svc,const char *user,
                  const struct job_req *req,uint64_t now,int *id)
 {
+    return sched_submit_deps(svc,user,req,NULL,0,now,id);
+}
+
+int sched_submit_deps(struct sched_service *svc,const char *user,
+                      const struct job_req *req,const struct sched_dep *deps,
+                      size_t count,uint64_t now,int *id)
+{
     struct job_req copy;
     char msg[160];
     int err;
@@ -46,7 +53,7 @@ int sched_submit(struct sched_service *svc,const char *user,
     // Owner session se aayega, payload ke user field pe trust mat karo.
     memset(copy.user,0,sizeof(copy.user));
     memcpy(copy.user,user,strlen(user));
-    err=job_add(svc->s,&copy,now,id);
+    err=job_add_deps(svc->s,&copy,deps,count,now,id);
     if(svc->log){
         if(err==S_OK) snprintf(msg,sizeof(msg),"[SCHEDULER] Job %d SUBMITTED by %s",*id,user);
         else snprintf(msg,sizeof(msg),"[SCHEDULER] Submit rejected for %s: %s",user,sched_error(err));
@@ -72,6 +79,10 @@ int sched_status_get(const struct sched_service *svc,int id,struct sched_status 
     out->dispatch_pending=j->dispatch_pending;
     out->dispatch_ms=j->dispatch_ms;
     out->failures=j->failures;
+    out->stop_pending=j->stop_pending;
+    out->hold_for=j->hold_for;
+    out->preempt_worker=j->preempt_worker;
+    out->migrated_from=j->migrated_from;
     out->usage=j->usage;
     out->checkpoint_no=j->checkpoint_no;
     out->checkpoint_size=j->checkpoint_size;
@@ -96,6 +107,8 @@ int sched_nodes_get(const struct sched_service *svc,struct sched_node *out,
         out[i].free=worker_free(curr);
         out[i].jobs=curr->jobs;
         out[i].reserved_jobs=curr->reserved_jobs;
+        out[i].load=curr->load;
+        out[i].heartbeat_ms=curr->heartbeat_ms;
         i++;
     }
     return S_OK;

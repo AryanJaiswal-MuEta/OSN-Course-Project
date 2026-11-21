@@ -255,7 +255,7 @@ static int transitions(void)
     int from,to,expected,ok=1;
     const int edges[8][8]={
         [WAITING]={[QUEUED]=1,[CANCELLED]=1},
-        [QUEUED]={[RUNNING]=1,[CANCELLED]=1},
+        [QUEUED]={[RUNNING]=1,[CANCELLED]=1,[FAILED]=1,[LOST]=1},
         [RUNNING]={[COMPLETED]=1,[FAILED]=1,[CANCELLED]=1,[LOST]=1,[QUEUED]=1},
         [LOST]={[QUEUED]=1,[FAILED_PERMANENT]=1}
     };

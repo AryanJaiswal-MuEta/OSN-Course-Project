@@ -39,9 +39,9 @@ Practical viva points: lookup is O(n), append is O(1) with a tail, IDs are separ
 
 ## Data reserved for later work
 
-Failure count and run ID are separate. A run ID changes each dispatch; migration/preemption must not consume failure attempts. The constant `MAX_ATTEMPTS` is 3; automatic retry accounting is not implemented yet.
+Failure count and run ID are separate. A run ID changes each dispatch; migration/preemption do not consume failure attempts. The constant `MAX_ATTEMPTS` is 3. Worker-loss recovery is implemented in `recovery.c`; the third worker-loss attempt ends in FAILED_PERMANENT.
 
-Dependency IDs, preemption hold, migration source, stop intent, telemetry and checkpoint metadata are initialized to zero/NULL. Their presence does not mean those features already work. Member 3's output service can own retained log buffers separately from this record.
+Dependencies, preemption holds, migration intent, telemetry and checkpoints now have scheduler implementations. The [21 November integration guide](scheduler-integration.md) describes the current APIs and worker messages. Member 3's output service owns retained log buffers separately from this record.
 
 ## Working policy decisions to review with teammates
 

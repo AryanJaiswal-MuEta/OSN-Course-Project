@@ -23,20 +23,22 @@ static void put32(char *p, uint32_t value)
 
 /** get 16 / get 32 helps in decoding header and payload easily*/
 
-static uint32_t get32(char *p)
+static uint32_t get32(const char *buf)
 {
+    const unsigned char *p=(const unsigned char *)buf;
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
 }
 
-static uint16_t get16(char *p)
+static uint16_t get16(const char *buf)
 {
+    const unsigned char *p=(const unsigned char *)buf;
     return (uint16_t)(((uint16_t)p[0] << 8) | p[1]);
 }
 
 /**  validate using enum defined in header file */
 int protocol_validate_type(uint16_t type)
 {
-    return type >= WORKER_REGISTER && type <= ERROR;
+    return type >= WORKER_REGISTER && type <= JOB_RESTORE;
 }
 
 /** Protocol encoding will happen to load the header and payload into packets for tcp/udp */
@@ -45,7 +47,7 @@ int protocol_encode(const struct protocol_message *message, unsigned char *buffe
     size_t total;
     if (!message || !buffer || !written || message->payload_len > PROTOCOL_MAX_PAYLOAD)
         return PROTOCOL_BAD_ARGUMENT;
-    if (!protocol_validate_type(message->type))
+    if (message->type>UINT16_MAX||!protocol_validate_type((uint16_t)message->type))
         return UNKNOWN_MESSAGE_TYPE;
     if (message->payload_len > 0 && !message->payload)
         return PROTOCOL_BAD_ARGUMENT;

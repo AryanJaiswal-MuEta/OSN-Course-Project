@@ -56,4 +56,30 @@ struct sched_pick {
 int sched_pick_next(const struct scheduler *s,enum sched_policy policy,
                     uint64_t now,struct sched_pick *out);
 
+struct sched_dep { int id; int group; };
+void sched_note(struct scheduler *s,const char *fmt,...);
+int sched_priority(const struct job *j,uint64_t now);
+int sched_quota_skip(const struct scheduler *s,const struct job *j);
+const struct worker *sched_fit(const struct scheduler *s,const struct job *j);
+int sched_job_eligible(const struct scheduler *s,const struct job *j);
+int job_add_deps(struct scheduler *s,const struct job_req *req,
+                 const struct sched_dep *deps,size_t count,uint64_t now,int *id);
+void sched_dependencies(struct scheduler *s,uint64_t now);
+void sched_release_holds(struct scheduler *s,int id);
+int sched_heartbeat(struct scheduler *s,int worker_id,double load,uint64_t now);
+int sched_worker_dead(struct scheduler *s,int worker_id,uint64_t now);
+int sched_tick(struct scheduler *s,uint64_t now);
+int sched_cancel(struct scheduler *s,int id,uint64_t now);
+int sched_migrate(struct scheduler *s,int id,uint64_t now);
+int sched_preempt(struct scheduler *s,int id,uint64_t now,int *worker_id);
+int sched_preempt_next(struct scheduler *s,enum sched_policy policy,uint64_t now);
+int sched_report(struct scheduler *s,int worker_id,int id,uint64_t run_id,
+                  enum job_state state,const struct telemetry *usage,
+                  const char *reason,uint64_t now);
+int sched_checkpoint(struct scheduler *s,int worker_id,int id,uint64_t run_id,
+                      uint64_t seq,const void *data,size_t size,uint64_t now);
+int sched_cache_set(struct scheduler *s,int worker_id,const char *key,int present);
+int sched_content_set(struct scheduler *s,int id,const char *key);
+int sched_cached(const struct worker *w,const char *key);
+
 #endif

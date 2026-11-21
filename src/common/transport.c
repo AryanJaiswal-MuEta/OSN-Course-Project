@@ -123,6 +123,7 @@ int transport_read(struct transport *transport, transport_message_function callb
     ssize_t count;
     int result;
     struct protocol_message message;
+    size_t received=0;
     if (!transport || transport->fd < 0 || !callback)
         return TRANSPORT_BAD_INPUT;
     for (;;)
@@ -130,6 +131,7 @@ int transport_read(struct transport *transport, transport_message_function callb
         count = recv(transport->fd, buffer, sizeof(buffer), 0);
         if (count > 0)
         {
+            received+=(size_t)count;
             result = protocol_decoder_feed(&transport->decoder, buffer, (size_t)count);
             if (result != PROTOCOL_COMPLETE)
                 return TRANSPORT_PROTOCOL;
@@ -143,6 +145,9 @@ int transport_read(struct transport *transport, transport_message_function callb
                 if (callback(&message, arg) != 0)
                     return TRANSPORT_IO;
             }
+            // Ek noisy socket pe unlimited recv karenge toh scheduler ke
+            // timers aur doosre peers starve honge. Next poll pe baaki padhenge.
+            if(received>=65536) return TRANSPORT_OK;
         }
         else if (count == 0)
             return TRANSPORT_CLOSED;

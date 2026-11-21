@@ -7,7 +7,7 @@ Member 1 slice implemented on 9 November 2026. This separates resource reservati
 1. After choosing a worker, call `job_reserve(s,id,worker_id,now,&run_id)`. It checks eligibility and free cores/RAM/GPUs, reserves all three, and allocates a fresh execution token. The public state stays QUEUED with `dispatch_pending=1`.
 2. Send the assignment through the transport. Its messages must carry the job ID, execution token and the bound worker identity.
 3. When that worker confirms the program actually started, call `job_confirm_start(s,id,worker_id,run_id,now)`. The state becomes RUNNING, the pending-admission slot is released, and reserved count moves to running count. Resources are not added a second time.
-4. Apply final results with the existing `job_finish()` only after start confirmation. It releases held resources once and records the terminal state.
+4. Network adapters now use `sched_report()` with the bound worker ID and execution token. It handles start failures, ordinary results and intentional stops; it calls the lower-level lifecycle operations after validation. See [scheduler integration](scheduler-integration.md).
 
 The local `job_start()` helper still works for the standalone scheduler driver and existing tests. It reserves and confirms immediately in one owner-thread call. Never use that shortcut merely because a network send succeeded.
 

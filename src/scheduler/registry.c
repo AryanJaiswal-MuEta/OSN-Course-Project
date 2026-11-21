@@ -16,6 +16,7 @@ void sched_free(struct scheduler *s)
 {
     struct job *curr,*temp;
     struct worker *ptr,*next;
+    struct cache_entry *entry,*tmp;
     if(!s) return;
 
     // next ko free se pehle save karo, warna freed node se link padhna padega.
@@ -30,6 +31,7 @@ void sched_free(struct scheduler *s)
     ptr=s->workers;
     while(ptr){
         next=ptr->next;
+        for(entry=ptr->cache;entry;entry=tmp){ tmp=entry->next; free(entry); }
         free(ptr);
         ptr=next;
     }
@@ -88,6 +90,7 @@ int worker_add(struct scheduler *s,struct resource total,uint64_t now,int *id)
     s->worker_tail=ptr;
     s->worker_count++;
     *id=ptr->id;
+    sched_note(s,"Worker %d registered: cores=%d RAM=%lld GPU=%d",ptr->id,total.cores,total.ram,total.gpu);
     return S_OK;
 }
 
@@ -118,5 +121,6 @@ int job_add(struct scheduler *s,const struct job_req *req,uint64_t now,int *id)
     s->job_count++;
     s->pending++;
     *id=ptr->id;
+    sched_note(s,"Job %d submitted by %s",ptr->id,ptr->req.user);
     return S_OK;
 }

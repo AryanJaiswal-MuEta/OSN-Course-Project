@@ -8,6 +8,9 @@ int job_reserve(struct scheduler *s,int id,int worker_id,uint64_t now,uint64_t *
     if(!s||!run_id) return S_BAD_INPUT;
     if(!j||!w) return S_NOT_FOUND;
     if(j->state!=QUEUED||j->dispatch_pending||w->state!=ALIVE) return S_BAD_STATE;
+    if(!sched_job_eligible(s,j)||sched_quota_skip(s,j)||
+       (w->preempt_for&&w->preempt_for!=id)||
+       (j->preempt_worker&&j->preempt_worker!=worker_id)) return S_BUSY;
     if(!worker_fits(w,j->req.need)) return S_NO_RESOURCE;
     if(now<j->queue_ms) return S_BAD_INPUT;
     if(s->next_run==UINT64_MAX) return S_ID_LIMIT;
@@ -22,8 +25,11 @@ int job_reserve(struct scheduler *s,int id,int worker_id,uint64_t now,uint64_t *
     j->run_id=s->next_run++;
     j->dispatch_pending=1;
     j->dispatch_ms=now;
+    j->checkpoint_seq=0;
+    j->stop_sent=S_STOP_NONE;
     j->reason[0]='\0';
     *run_id=j->run_id;
+    sched_note(s,"Job %d reserved on worker %d run=%llu",id,worker_id,(unsigned long long)j->run_id);
     // Pending queue ka slot abhi occupied rakho. Prepare fail hua toh job
     // ko full queue mein reinsert karne ki problem hi nahi aayegi.
     return S_OK;
@@ -63,6 +69,9 @@ int job_confirm_start(struct scheduler *s,int id,int worker_id,uint64_t run_id,u
     j->last_worker=worker_id;
     j->dispatch_pending=0;
     j->state=RUNNING;
+    j->migrated_from=0;
+    sched_release_holds(s,j->id);
+    sched_note(s,"Job %d QUEUED -> RUNNING on worker %d",id,worker_id);
     return S_OK;
 }
 
@@ -90,7 +99,11 @@ static int finish_dispatch(struct scheduler *s,int id,int worker_id,uint64_t run
         j->last_worker=worker_id;
         j->end_ms=now;
         j->state=FAILED;
+        j->stop_pending=S_STOP_NONE;
+        sched_release_holds(s,id);
+        sched_dependencies(s,now);
     }
+    sched_note(s,"Job %d dispatch %s: %s",id,failed?"FAILED":"aborted",j->reason);
     return S_OK;
 }
 

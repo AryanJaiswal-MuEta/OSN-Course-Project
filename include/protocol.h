@@ -25,7 +25,21 @@ enum protocol_type
     JOB_ACCEPTED = 4,
     JOB_COMPLETE = 5,
     JOB_FAILED = 6,
-    ERROR = 7
+    ERROR = 7,
+    WORKER_READY = 8,
+    WORKER_HEARTBEAT = 9,
+    JOB_STOP = 10,
+    JOB_STOPPED = 11,
+    WORKER_DRAIN = 12,
+    JOB_CHECKPOINT = 13,
+    WORKER_CACHE = 14,
+    CLIENT_LOGIN = 15,
+    NODES_QUERY = 16,
+    STATUS_QUERY = 17,
+    JOB_CANCEL = 18,
+    JOB_MIGRATE = 19,
+    SCHED_REPLY = 20,
+    JOB_RESTORE = 21
 };
 
 /** Standardized error codes carried in protocol error responses. */

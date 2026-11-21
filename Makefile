@@ -4,10 +4,10 @@ CPPFLAGS = -Iinclude -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOU
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -Werror -g
 LDFLAGS =
 
-CORE = build/registry.o build/lifecycle.o build/loop.o build/service.o
+CORE = build/registry.o build/lifecycle.o build/loop.o build/service.o build/dispatch.o build/policy.o build/dependencies.o build/quotas.o build/placement.o build/preemption.o build/recovery.o
 HEADERS = include/model.h include/scheduler.h include/scheduler_loop.h include/scheduler_service.h
-COMMON = build/protocol.o build/transport.o build/discovery.o
-COMMON_HEADERS = include/protocol.h include/transport.h include/discovery.h
+COMMON = build/protocol.o build/transport.o build/discovery.o build/logging.o
+COMMON_HEADERS = include/protocol.h include/transport.h include/discovery.h include/logging.h
 RUNNER = build/worker_runner.o build/worker_files.o build/worker_platform.o
 RUN_HEADERS = include/model.h include/runner.h include/worker_config.h include/worker_loop.h include/worker_discovery.h include/discovery.h src/worker/internal.h
 
@@ -26,23 +26,41 @@ build/transport.o: src/common/transport.c include/transport.h include/protocol.h
 build/discovery.o: src/common/discovery.c include/discovery.h | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
+build/logging.o: src/common/logging.c include/logging.h | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
 build/time_log.o: src/common/time_log.c include/time_log.h | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 build/%.o: src/scheduler/%.c $(HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
-build/libscheduler.a: $(CORE)
+build/libscheduler.a: $(CORE) Makefile
+	rm -f $@
 	$(AR) rcs $@ $(CORE)
 
 build/worker_%.o: src/worker/%.c $(RUN_HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
-build/librunner.a: $(RUNNER)
+build/librunner.a: $(RUNNER) Makefile
+	rm -f $@
 	$(AR) rcs $@ $(RUNNER)
 
-build/scheduler: src/scheduler/main.c build/libscheduler.a $(COMMON) $(HEADERS) $(COMMON_HEADERS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(COMMON) $(LDFLAGS) -o $@
+build/scheduler: src/scheduler/main.c src/scheduler/network.c src/scheduler/server.h build/libscheduler.a $(COMMON) $(HEADERS) $(COMMON_HEADERS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) src/scheduler/main.c src/scheduler/network.c build/libscheduler.a $(COMMON) $(LDFLAGS) -o $@
+
+build/test_scheduler build/test_service build/test_loop build/test_dispatch build/test_advanced: build/test_%: tests/test_%.c build/libscheduler.a $(HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(LDFLAGS) -o $@
+
+.PHONY: test-scheduler
+test-scheduler: build/test_scheduler build/test_service build/test_loop build/test_dispatch build/test_policy build/test_advanced build/scheduler
+	./build/test_scheduler
+	./build/test_service
+	./build/test_loop
+	./build/test_dispatch
+	./build/test_policy
+	./build/test_advanced
+	python3 tests/test_scheduler_network.py ./build/scheduler
 
 build/worker: src/worker/main.c build/worker_config.o build/worker_loop.o build/worker_discovery.o build/librunner.a $(COMMON) $(RUN_HEADERS) $(COMMON_HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/worker_config.o build/worker_loop.o build/worker_discovery.o build/librunner.a $(COMMON) $(LDFLAGS) -o $@
@@ -72,9 +90,9 @@ build/test_policy: tests/test_policy.c build/libscheduler.a $(HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(LDFLAGS) -o $@
 
 build/test_integration: tests/test_integration.c build/libscheduler.a build/librunner.a build/worker_config.o build/worker_loop.o $(COMMON) $(HEADERS) $(RUN_HEADERS) $(COMMON_HEADERS) | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a build/librunner.a build/worker_config.o build/worker_loop.o $(COMMON) $(LDFLAGS) -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/worker_config.o build/worker_loop.o build/libscheduler.a build/librunner.a $(COMMON) $(LDFLAGS) -o $@
 
-test: build/test_protocol build/test_discovery build/test_network build/test_policy build/test_integration
+test: test-scheduler build/test_protocol build/test_discovery build/test_network build/test_policy build/test_integration
 	./build/test_protocol
 	./build/test_discovery
 	./build/test_network

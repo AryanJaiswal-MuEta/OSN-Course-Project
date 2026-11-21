@@ -17,6 +17,8 @@ struct sched_node {
     struct resource free;
     size_t jobs;
     size_t reserved_jobs;
+    double load;
+    uint64_t heartbeat_ms;
 };
 
 struct sched_status {
@@ -29,6 +31,10 @@ struct sched_status {
     int dispatch_pending;
     uint64_t dispatch_ms;
     unsigned int failures;
+    int stop_pending;
+    int hold_for;
+    int preempt_worker;
+    int migrated_from;
     struct telemetry usage;
     uint64_t checkpoint_no;
     size_t checkpoint_size;
@@ -42,6 +48,9 @@ int sched_register_worker(struct sched_service *svc,struct resource total,
                           uint64_t now,int *id);
 int sched_submit(struct sched_service *svc,const char *user,
                  const struct job_req *req,uint64_t now,int *id);
+int sched_submit_deps(struct sched_service *svc,const char *user,
+                      const struct job_req *req,const struct sched_dep *deps,
+                      size_t count,uint64_t now,int *id);
 int sched_status_get(const struct sched_service *svc,int id,struct sched_status *out);
 int sched_nodes_get(const struct sched_service *svc,struct sched_node *out,
                     size_t cap,size_t *count);
