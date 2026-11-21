@@ -205,9 +205,11 @@ int server_message(const struct protocol_message *msg,void *arg)
             if(wire32(buf)>INT_MAX) goto done;
             id=(int)wire32(buf); j=job_find(s,id);
             if(!j){ err=S_NOT_FOUND; goto done; }
-            if(strcmp(p->user,j->req.user)) return reply(p,msg->request_id,S_BAD_INPUT,id,"permission denied");
-            if(msg->type==JOB_CANCEL) err=sched_cancel(s,id,now);
-            else if(msg->type==JOB_MIGRATE) err=sched_migrate(s,id,now);
+            struct sched_status status;
+            err=sched_status_owned(&p->ctx->svc,p->user,id,&status);
+            if(err!=S_OK) goto done;
+            if(msg->type==JOB_CANCEL) err=sched_cancel_owned(&p->ctx->svc,p->user,id,now);
+            else if(msg->type==JOB_MIGRATE) err=sched_migrate_owned(&p->ctx->svc,p->user,id,now);
             else{
                 snprintf(text,sizeof(text),"%s worker=%d run=%llu pending=%d failures=%u ram=%lld peak=%lld faults=%llu cpu=%.3f checkpoint=%llu bytes=%zu age_ms=%llu reason=%s",
                     job_state_name(j->state),j->worker_id,(unsigned long long)j->run_id,j->dispatch_pending,

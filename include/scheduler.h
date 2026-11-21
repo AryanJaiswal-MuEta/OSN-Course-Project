@@ -5,7 +5,7 @@
 
 enum sched_err {
     S_OK=0,S_BAD_INPUT,S_NO_MEMORY,S_NOT_FOUND,S_BAD_STATE,
-    S_NO_RESOURCE,S_QUEUE_FULL,S_STALE_RUN,S_BUSY,S_ID_LIMIT,S_BUFFER_SMALL
+    S_NO_RESOURCE,S_QUEUE_FULL,S_STALE_RUN,S_BUSY,S_ID_LIMIT,S_BUFFER_SMALL,S_FORBIDDEN
 };
 
 void sched_init(struct scheduler *s);
@@ -73,6 +73,8 @@ int sched_cancel(struct scheduler *s,int id,uint64_t now);
 int sched_migrate(struct scheduler *s,int id,uint64_t now);
 int sched_preempt(struct scheduler *s,int id,uint64_t now,int *worker_id);
 int sched_preempt_next(struct scheduler *s,enum sched_policy policy,uint64_t now);
+void sched_refresh_holds(struct scheduler *s);
+int sched_worker_writable(struct scheduler *s,int worker_id,int writable);
 int sched_report(struct scheduler *s,int worker_id,int id,uint64_t run_id,
                   enum job_state state,const struct telemetry *usage,
                   const char *reason,uint64_t now);

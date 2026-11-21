@@ -1,5 +1,7 @@
 # Member 1 scheduler handoff — 21 November 2026
 
+**22 November follow-up:** [final Member 1 scheduler check](member1-final.md) documents the preemption/cancellation/backpressure fixes, owner-checked query APIs and final tests.
+
 The scheduler core and TCP adapter are implemented. Build on Linux/macOS:
 
 **Worker handoff update:** the [Member 2 worker implementation](worker-integration.md) now executes real jobs. One-worker and two-worker loopback integration tests have been added there; the scheduler-only fixture tests described below still remain separate from those real-process tests. Output frames are now retained through `sched_output()`.

@@ -127,6 +127,7 @@ int sched_cancel(struct scheduler *s,int id,uint64_t now)
     if((j->state==WAITING||j->state==QUEUED)&&!j->dispatch_pending)
         return job_cancel_pending(s,id,"cancelled by owner",now);
     if(j->state!=RUNNING&&!j->dispatch_pending) return S_BAD_STATE;
+    if(j->stop_pending==S_STOP_CANCEL) return S_OK;
     // Reap confirmation se pehle resources busy hi rahenge.
     j->stop_pending=S_STOP_CANCEL;
     j->stop_ms=now;

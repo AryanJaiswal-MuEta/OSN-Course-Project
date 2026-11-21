@@ -50,17 +50,18 @@ build/librunner.a: $(RUNNER) Makefile
 build/scheduler: src/scheduler/main.c src/scheduler/network.c src/scheduler/server.h build/libscheduler.a $(COMMON) $(HEADERS) $(COMMON_HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) src/scheduler/main.c src/scheduler/network.c build/libscheduler.a $(COMMON) $(LDFLAGS) -o $@
 
-build/test_scheduler build/test_service build/test_loop build/test_dispatch build/test_advanced: build/test_%: tests/test_%.c build/libscheduler.a $(HEADERS) | build
+build/test_scheduler build/test_service build/test_loop build/test_dispatch build/test_advanced build/test_scheduler_final: build/test_%: tests/test_%.c build/libscheduler.a $(HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/libscheduler.a $(LDFLAGS) -o $@
 
 .PHONY: test-scheduler
-test-scheduler: build/test_scheduler build/test_service build/test_loop build/test_dispatch build/test_policy build/test_advanced build/scheduler
+test-scheduler: build/test_scheduler build/test_service build/test_loop build/test_dispatch build/test_policy build/test_advanced build/test_scheduler_final build/scheduler
 	./build/test_scheduler
 	./build/test_service
 	./build/test_loop
 	./build/test_dispatch
 	./build/test_policy
 	./build/test_advanced
+	./build/test_scheduler_final
 	python3 tests/test_scheduler_network.py ./build/scheduler
 
 build/worker: src/worker/main.c build/worker_config.o build/worker_loop.o build/worker_discovery.o build/worker_network.o build/worker_cache.o build/librunner.a $(COMMON) $(RUN_HEADERS) $(COMMON_HEADERS)

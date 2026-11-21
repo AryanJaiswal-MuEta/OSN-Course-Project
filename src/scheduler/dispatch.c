@@ -8,6 +8,7 @@ int job_reserve(struct scheduler *s,int id,int worker_id,uint64_t now,uint64_t *
     if(!s||!run_id) return S_BAD_INPUT;
     if(!j||!w) return S_NOT_FOUND;
     if(j->state!=QUEUED||j->dispatch_pending||w->state!=ALIVE) return S_BAD_STATE;
+    if(w->dispatch_blocked) return S_BUSY;
     if(!sched_job_eligible(s,j)||sched_quota_skip(s,j)||
        (w->preempt_for&&w->preempt_for!=id)||
        (j->preempt_worker&&j->preempt_worker!=worker_id)) return S_BUSY;

@@ -41,7 +41,7 @@ def send(s, kind, data=b"", request=1, split=False):
 
 def response(s, err=0):
     kind, request, data = recv(s)
-    assert kind == 20, (kind, data)
+    assert kind == 20, (kind, len(data), data[:128])
     code, jid, n = struct.unpack("!IIH", data[:10])
     assert code == err, (code, data[10:])
     assert n == len(data)-10
@@ -273,7 +273,7 @@ def preemption_and_drain():
         assert "CANCELLED" in status(c, jid)
         bob = login(connect, b"bob")
         send(bob, 18, struct.pack("!I", victim))
-        assert "permission denied" in response(bob, 1)[1]
+        assert "permission denied" in response(bob, 11)[1]
     print("PASS TCP preemption/holds, drain exclusion, launch failure, reserved cancellation and owner binding")
 
 
@@ -285,9 +285,75 @@ def cli():
     print("PASS scheduler CLI validation")
 
 
+def checkpoint_backpressure():
+    with server() as (connect, _):
+        c=login(connect)
+        source,_=worker(connect,3)
+        jobs=[]
+        for _ in range(3):
+            jid=submit(c)
+            run=assigned(source,jid)
+            started(source,jid,run)
+            jobs.append((jid,run))
+        saved=b'x'*(512*1024)
+        for jid,run in jobs:
+            send(source,13,struct.pack('!IIQI',jid,run,1,len(saved))+saved)
+            response(source)
+        send(source,12)
+        response(source)
+        for jid,run in jobs:
+            send(c,19,struct.pack('!I',jid)); response(c)
+            kind,_,data=recv(source)
+            assert kind==10 and data==struct.pack('!IIB',jid,run,3)
+            finished(source,jid,run,11)
+        target,wid=worker(connect,3)
+        restarted=[]
+        for jid,_ in jobs:
+            kind,_,data=recv(target)
+            assert kind==21 and data[20:]==saved
+            run=assigned(target,jid)
+            restarted.append((jid,run))
+        for jid,run in restarted:
+            started(target,jid,run)
+        for jid,run in restarted:
+            finished(target,jid,run)
+            assert 'COMPLETED' in status(c,jid) and 'failures=0' in status(c,jid)
+        send(c,16)
+        assert f'{wid} ALIVE cores=3/3' in response(c)[1]
+    print('PASS three concurrent 512 KiB restores without queue overflow or worker loss')
+
+
+def cancellation_deadline():
+    with server() as (connect,_):
+        c=login(connect)
+        w,_=worker(connect)
+        jid=submit(c); run=assigned(w,jid); started(w,jid,run)
+        send(c,18,struct.pack('!I',jid)); response(c)
+        kind,_,data=recv(w)
+        assert kind==10 and data==struct.pack('!IIB',jid,run,1)
+        # Worker sends heartbeats but refuses to reap/acknowledge. Repeated
+        # owner cancellation must not reset the scheduler's stop deadline.
+        end=time.monotonic()+12
+        while True:
+            text=status(c,jid)
+            if 'CANCELLED' in text:
+                assert 'failures=0' in text
+                break
+            assert time.monotonic()<end,text
+            send(c,18,struct.pack('!I',jid)); response(c)
+            try:
+                send(w,9,struct.pack('!II',0,0))
+            except OSError:
+                pass
+            time.sleep(.3)
+    print('PASS repeated cancellation cannot extend a non-responsive stop deadline')
+
+
 if __name__ == "__main__":
     cli()
     pipeline()
     migration()
     preemption_and_drain()
     recovery()
+    checkpoint_backpressure()
+    cancellation_deadline()

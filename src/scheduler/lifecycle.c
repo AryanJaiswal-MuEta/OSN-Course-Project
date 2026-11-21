@@ -27,6 +27,8 @@ const char *sched_error(int err)
         return "ID range exhausted";
     case S_BUFFER_SMALL:
         return "query buffer too small";
+    case S_FORBIDDEN:
+        return "permission denied";
     default:
         return "unknown error";
     }

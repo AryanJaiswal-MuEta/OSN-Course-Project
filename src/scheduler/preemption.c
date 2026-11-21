@@ -29,7 +29,7 @@ int sched_preempt(struct scheduler *s,int id,uint64_t now,int *worker_id)
     victims=malloc(s->job_count*sizeof(*victims));
     if(!victims) return S_NO_MEMORY;
     for(w=s->workers;w;w=w->next){
-        if(w->state!=ALIVE||w->preempt_for||!enough(w->total,j->req.need)) continue;
+        if(w->state!=ALIVE||w->dispatch_blocked||w->preempt_for||!enough(w->total,j->req.need)) continue;
         n=0;
         for(curr=s->jobs;curr;curr=curr->next){
             if(curr->worker_id!=w->id||curr->state!=RUNNING||!curr->req.preemptible||curr->stop_pending)
@@ -67,14 +67,34 @@ int sched_preempt(struct scheduler *s,int id,uint64_t now,int *worker_id)
 
 int sched_preempt_next(struct scheduler *s,enum sched_policy policy,uint64_t now)
 {
-    struct job *j,*best=NULL;
-    int worker_id;
+    struct job *j;
+    int worker_id,err;
     if(!s||(policy!=SCHED_FIFO_ORDER&&policy!=SCHED_PRIORITY_ORDER)) return S_BAD_INPUT;
     for(j=s->jobs;j;j=j->next){
         if(!sched_job_eligible(s,j)||sched_quota_skip(s,j)) continue;
-        if(policy==SCHED_FIFO_ORDER){ best=j; break; }
-        if(sched_priority(j,now)==1&&!j->preempt_worker&&!sched_fit(s,j)){ best=j; break; }
+        if(sched_priority(j,now)==1&&!j->preempt_worker&&!sched_fit(s,j)){
+            err=sched_preempt(s,j->id,now,&worker_id);
+            if(err!=S_NO_RESOURCE) return err;
+            // PRIORITY mein impossible head ke peeche feasible urgent job ho
+            // sakti hai. FIFO mein head blocking waise hi preserve karni hai.
+        }
+        if(policy==SCHED_FIFO_ORDER) break;
     }
-    if(!best||sched_priority(best,now)!=1||best->preempt_worker) return S_NOT_FOUND;
-    return sched_preempt(s,best->id,now,&worker_id);
+    return S_NOT_FOUND;
+}
+
+void sched_refresh_holds(struct scheduler *s)
+{
+    struct worker *w;
+    struct job *j;
+    if(!s) return;
+    for(w=s->workers;w;w=w->next){
+        if(!w->preempt_for) continue;
+        j=job_find(s,w->preempt_for);
+        if(!j||j->state!=QUEUED||j->stop_pending==S_STOP_CANCEL||
+           w->state==DEAD||w->state==DRAINING||sched_quota_skip(s,j)){
+            sched_note(s,"Preemption hold for job %d released: beneficiary/worker no longer eligible",w->preempt_for);
+            sched_release_holds(s,w->preempt_for);
+        }
+    }
 }

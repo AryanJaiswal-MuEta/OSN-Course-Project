@@ -56,7 +56,7 @@ const struct worker *sched_fit(const struct scheduler *s,const struct job *j)
 {
     const struct worker *w,*best=NULL;
     for(w=s->workers;w;w=w->next){
-        if(!worker_fits(w,j->req.need)||(w->preempt_for&&w->preempt_for!=j->id)) continue;
+        if(w->dispatch_blocked||!worker_fits(w,j->req.need)||(w->preempt_for&&w->preempt_for!=j->id)) continue;
         if(j->preempt_worker&&w->id!=j->preempt_worker) continue;
         if(best&&j->migrated_from){
             if(w->id==j->migrated_from&&best->id!=j->migrated_from) continue;
@@ -65,4 +65,16 @@ const struct worker *sched_fit(const struct scheduler *s,const struct job *j)
         if(!best||better(w,best,j)) best=w;
     }
     return best;
+}
+
+int sched_worker_writable(struct scheduler *s,int worker_id,int writable)
+{
+    struct worker *w=worker_find(s,worker_id);
+    if(!w) return S_NOT_FOUND;
+    if(writable!=0&&writable!=1) return S_BAD_INPUT;
+    if(w->state==DEAD) return S_BAD_STATE;
+    // Network queue busy hai toh selection pause karo; resources/retry budget
+    // ko touch nahi karna. Flush ke baad same worker phir eligible ho jayega.
+    w->dispatch_blocked=!writable;
+    return S_OK;
 }

@@ -97,6 +97,7 @@ struct worker {
     uint64_t heartbeat_ms;
     double load;
     int preempt_for;
+    int dispatch_blocked;
     struct cache_entry *cache;
     struct worker *next;
 };

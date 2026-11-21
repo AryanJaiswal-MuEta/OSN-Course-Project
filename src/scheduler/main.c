@@ -74,6 +74,10 @@ static void on_io(struct sched_loop *loop,int fd,short events,void *arg)
         err=transport_flush(&p->trans);
         if(err!=TRANSPORT_OK&&err!=TRANSPORT_WOULD_BLOCK){ server_close(p); return; }
     }
+    if(p->worker_id){
+        sched_worker_writable(&ctx->sched,p->worker_id,!transport_wants_write(&p->trans));
+        if(!transport_wants_write(&p->trans)) sched_loop_request(loop);
+    }
     sched_loop_update(loop,fd,POLLIN|(transport_wants_write(&p->trans)?POLLOUT:0));
 }
 
@@ -113,6 +117,11 @@ static void on_schedule(struct sched_loop *loop,uint64_t now,void *arg)
     size_t i;
     int err;
     (void)loop;
+    sched_refresh_holds(&ctx->sched);
+    for(i=0;i<MAX_PEERS;i++)
+        if(ctx->peers[i].fd>=0&&ctx->peers[i].worker_id)
+            sched_worker_writable(&ctx->sched,ctx->peers[i].worker_id,
+                                  !transport_wants_write(&ctx->peers[i].trans));
     // Quota skips ek pass mein ek baar log karo, har inner pick pe nahi.
     for(j=ctx->sched.jobs;j;j=j->next)
         if(sched_job_eligible(&ctx->sched,j)&&sched_quota_skip(&ctx->sched,j))
@@ -130,7 +139,7 @@ static void on_schedule(struct sched_loop *loop,uint64_t now,void *arg)
         if(server_assign(&ctx->peers[i],j)<0){
             // Queue partial ho sakti hai; whole session fence karke hi reservation chhodo.
             server_close(&ctx->peers[i]);
-        }
+        }else sched_worker_writable(&ctx->sched,pick.worker_id,0);
     }
     if(err==S_NO_RESOURCE) sched_preempt_next(&ctx->sched,ctx->policy,now);
     server_stops(ctx);
