@@ -80,6 +80,9 @@ build/job_fixture: tests/programs/job.c | build
 build/counter: tests/programs/counter.c | build
 	$(CC) $(CPPFLAGS) $(WORKLOAD_CFLAGS) $< -o $@
 
+build/stream_fixture: tests/programs/stream.c | build
+	$(CC) $(CPPFLAGS) $(WORKLOAD_CFLAGS) $< -o $@
+
 build/test_worker_config: tests/test_worker_config.c build/worker_config.o $(RUN_HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/worker_config.o $(LDFLAGS) -o $@
 
@@ -96,7 +99,7 @@ build/worker_runner: tools/worker_runner.c build/librunner.a $(RUN_HEADERS) | bu
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< build/librunner.a $(LDFLAGS) -o $@
 
 .PHONY: test-worker
-test-worker: build/worker build/scheduler build/counter build/job_fixture build/test_runner build/test_start_ack build/test_worker_cache build/worker_runner build/test_worker_config build/test_worker_loop
+test-worker: build/worker build/scheduler build/counter build/stream_fixture build/job_fixture build/test_runner build/test_start_ack build/test_worker_cache build/worker_runner build/test_worker_config build/test_worker_loop
 	./build/test_worker_cache
 	./build/test_worker_config
 	./build/test_worker_loop ./build/job_fixture

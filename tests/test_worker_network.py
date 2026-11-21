@@ -12,6 +12,7 @@ import threading
 import time
 
 WORKER, SCHEDULER, COUNTER = map(lambda s: str(pathlib.Path(s).resolve()), sys.argv[1:4])
+STREAM = str(pathlib.Path(COUNTER).with_name('stream_fixture'))
 BASE = 9000000+os.getpid()*10
 
 
@@ -113,7 +114,7 @@ class Peer:
 
 
 @contextlib.contextmanager
-def fixture():
+def fixture(initial_cache=None):
     tcp = socket.socket()
     tcp.bind(("0.0.0.0", 0))
     tcp.listen()
@@ -138,6 +139,10 @@ def fixture():
     thread.start()
     peers = []
     with tempfile.TemporaryDirectory(prefix="osn_worker_test_") as cache:
+        for key,data in (initial_cache or {}).items():
+            path=pathlib.Path(cache)/key
+            path.write_bytes(data)
+            path.chmod(0o700)
         env = dict(os.environ, OSN_CACHE_DIR=cache, OSN_CACHE_SIZE_MB="2")
         proc = subprocess.Popen([WORKER, "-cores", "2", "-ram", "512", "-discovery-port", str(udp.getsockname()[1])],
                                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=env)
@@ -310,7 +315,82 @@ def real_cluster(workers=1):
     print(f"PASS real scheduler + {workers} worker(s): discovery, admission, exec, heartbeat, checkpoint, migration, completion and accounting")
 
 
-process_and_cache()
-reconnect()
-real_cluster()
-real_cluster(2)
+def independent_completions():
+    with fixture() as (_,accept,cache):
+        p=accept()
+        producer,fast=BASE+10,BASE+11
+        p.transfer(producer,20,'continuous-stream',pathlib.Path(STREAM).read_bytes())
+        p.assign(producer,20,'remote-stream')
+        p.until(lambda:len(p.outputs.get((producer,20),b''))>=32768)
+        start=time.monotonic()
+        p.assign(fast,21)
+        p.until(lambda:(fast,21) in p.results,timeout=2)
+        latency=time.monotonic()-start
+        assert p.results[fast,21][0]==5
+        assert (producer,20) not in p.results,'producer ended before concurrent result was checked'
+        assert not pathlib.Path(f'/tmp/osn_job_{fast}').exists()
+        p.stop(producer,20,1)
+        p.until(lambda:(producer,20) in p.results,timeout=8)
+        assert p.results[producer,20][0]==11
+        # Failed setup/exec must not make an unusable cached program look recently used.
+        failed=BASE+12
+        p.transfer(failed,22,'bad-interpreter',b'#!/osn/no_such_interpreter_94851\n')
+        p.until(lambda:'bad-interpreter' in p.inventory)
+        before=(cache/'bad-interpreter').stat().st_mtime_ns
+        p.assign(failed,22,'remote-invalid')
+        p.until(lambda:(failed,22) in p.results)
+        assert p.results[failed,22][0]==6 and (failed,22) not in p.started
+        assert (cache/'bad-interpreter').stat().st_mtime_ns==before
+    print(f'PASS completed job reports during unrelated output ({latency:.2f}s); exec failure leaves LRU unchanged')
+
+
+def migration_grace_and_active_drain():
+    with fixture() as (proc,accept,_):
+        p=accept()
+        jid=BASE+13
+        program=b"#!/bin/sh\ntrap '' TERM\nprintf 'ready\\n'\nwhile :; do sleep 1; done\n"
+        p.transfer(jid,23,'ignore-term',program)
+        p.assign(jid,23,'remote-ignore-term')
+        p.until(lambda:b'ready' in p.outputs.get((jid,23),b''))
+        begin=time.monotonic()
+        p.stop(jid,23,3)
+        p.until(lambda:(jid,23) in p.results,timeout=4)
+        elapsed=time.monotonic()-begin
+        assert 1.8<=elapsed<3.5,elapsed
+        assert p.results[jid,23][0]==11
+        assert not pathlib.Path(f'/tmp/osn_job_{jid}').exists()
+        jid=BASE+14
+        p.transfer(jid,24,'drain-counter',pathlib.Path(COUNTER).read_bytes())
+        p.assign(jid,24,'remote-counter')
+        p.until(lambda:(jid,24) in p.started)
+        heartbeat_count=p.heartbeats
+        proc.stdin.write(b'drain\n'); proc.stdin.flush()
+        p.until(lambda:p.draining)
+        assert proc.poll() is None and (jid,24) not in p.results
+        p.until(lambda:(jid,24) in p.results,timeout=8)
+        assert p.results[jid,24][0]==5
+        assert p.heartbeats>heartbeat_count
+        proc.wait(timeout=4)
+    print('PASS migration enforces two-second grace; active drain keeps heartbeats and waits for completion')
+
+
+def control_precedes_inventory():
+    with fixture({'inventory-A':b'a','inventory-B':b'b'}) as (proc,accept,_):
+        p=accept()
+        p.read()
+        assert p.events[0][0]==9,'bulk inventory was queued ahead of due heartbeat'
+        p.until(lambda:len(p.inventory)==2)
+        proc.send_signal(signal.SIGINT)
+        p.until(lambda:p.draining)
+        proc.wait(timeout=4)
+    print('PASS startup inventory is reported after due heartbeat control traffic')
+
+
+if __name__=='__main__':
+    process_and_cache()
+    reconnect()
+    real_cluster()
+    real_cluster(2)
+    independent_completions()
+    migration_grace_and_active_drain()
+    control_precedes_inventory()

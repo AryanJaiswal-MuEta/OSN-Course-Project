@@ -73,7 +73,9 @@ static void io(struct worker_loop *loop,int fd,short events,void *arg)
         if(err!=TRANSPORT_OK&&err!=TRANSPORT_WOULD_BLOCK) goto lost;
     }
     if(events&POLLOUT){
+        size_t pending=n->trans.pending_len-n->trans.pending_offset;
         err=transport_flush(&n->trans);
+        n->tx_sent+=pending-(n->trans.pending_len-n->trans.pending_offset);
         if(err!=TRANSPORT_OK&&err!=TRANSPORT_WOULD_BLOCK) goto lost;
     }
     if(worker_loop_watch(loop,WORKER_CONN,fd,POLLIN|(transport_wants_write(&n->trans)?POLLOUT:0))<0) goto lost;
@@ -133,7 +135,7 @@ int main(int argc,char **argv)
         if(n.fd<0){ if(!abort_requested&&!drain_requested) poll(NULL,0,500); continue; }
         if(transport_init(&n.trans,n.fd,1)!=TRANSPORT_OK){ close(n.fd); status=1; break; }
         if(worker_loop_init(&n.loop,&hooks,&n)!=RUN_OK){ transport_free(&n.trans); status=1; break; }
-        n.worker_id=n.lost=n.draining=n.drain_sent=0; n.heartbeat=0; n.registered_ms=runner_now_ms();
+        n.worker_id=n.lost=n.draining=n.drain_sent=0; n.heartbeat=n.tx_sent=0; n.registered_ms=runner_now_ms();
         worker_p32(reg,(uint32_t)n.cfg.capacity.cores); worker_p64(reg+4,(uint64_t)n.cfg.capacity.ram);
         worker_p32(reg+12,(uint32_t)n.cfg.capacity.gpu);
         struct protocol_message message={WORKER_REGISTER,1,(const char *)reg,sizeof(reg)};

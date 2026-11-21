@@ -20,6 +20,11 @@ void worker_p64(unsigned char *p,uint64_t x){ int i; for(i=7;i>=0;i--){ p[i]=(un
 static size_t u16(const unsigned char *p){ return (size_t)p[0]*256+p[1]; }
 static void p16(unsigned char *p,size_t x){ p[0]=(unsigned char)(x>>8); p[1]=(unsigned char)x; }
 
+static uint64_t queued_end(const struct worker_node *n)
+{
+    return n->tx_sent+n->trans.pending_len-n->trans.pending_offset;
+}
+
 int worker_send(struct worker_node *n,int type,const void *buf,size_t size)
 {
     struct protocol_message msg={(uint64_t)type,0,buf,size};
@@ -193,7 +198,6 @@ int worker_message(const struct protocol_message *msg,void *arg)
             remove_task(n,t); return 0;
         }
         t->assigned=1;
-        if(t->pinned) worker_cache_touch(&n->cache,t->key);
         log_line("WORKER","Job %d run %llu forked; waiting for exec outcome",id,(unsigned long long)run);
     }else if(msg->type==JOB_STOP){
         if(size!=9||p[8]<1||p[8]>3) return -1;
@@ -220,7 +224,10 @@ int worker_started(const struct worker_start *start,void *arg)
     log_line("WORKER","Job %d: %s",start->id,start->reason);
     if(start->exec_state!=RUN_START_OK) return 0;
     worker_p32(buf,(uint32_t)start->id); worker_p32(buf+4,(uint32_t)start->run_id);
-    return worker_send(n,JOB_ACCEPTED,buf,8);
+    if(worker_send(n,JOB_ACCEPTED,buf,8)) return 1;
+    struct worker_task *t=task(n,start->id,start->run_id,0);
+    if(t&&t->pinned) worker_cache_touch(&n->cache,t->key);
+    return 0;
 }
 
 int worker_output(int id,uint64_t run,const void *buf,size_t size,void *arg)
@@ -233,6 +240,7 @@ int worker_output(int id,uint64_t run,const void *buf,size_t size,void *arg)
     memcpy(data+16,buf,size);
     if(worker_send(n,JOB_OUTPUT,data,size+16)) return 1;
     t->out_offset+=size;
+    t->output_end=queued_end(n);
     return 0;
 }
 
@@ -255,6 +263,7 @@ static int checkpoint(struct worker_node *n,struct worker_task *t,struct run_job
     if(size) memcpy(buf+20,state,size);
     err=worker_send(n,JOB_CHECKPOINT,buf,size+20); free(buf);
     if(err){ free(state); return 1; }
+    t->checkpoint_end=queued_end(n);
     free(t->last_state); t->last_state=state; t->last_size=size; t->have_state=1; t->cp_seq++;
     return 0;
 }
@@ -268,7 +277,9 @@ int worker_result(const struct worker_result *res,void *arg)
     if(!t->final_queued){
         if(!t->files_removed){
             if(checkpoint(n,t,j,runner_now_ms(),1)) return 1;
-            if(transport_wants_write(&n->trans)) return 1;
+            // Bas isi execution ke last output/state tak flush wait karo.
+            // Dusri job continuously output de toh iski completion starve nahi hogi.
+            if(n->tx_sent<t->output_end||n->tx_sent<t->checkpoint_end) return 1;
             // Same host pe migration destination ko wahi job ID mil sakta hai.
             // Reap/output flush ke baad folder hatao, phir stop/result ack bhejo.
             if(run_cleanup(j)<0){ n->lost=1; return 1; }
@@ -277,13 +288,34 @@ int worker_result(const struct worker_result *res,void *arg)
         if(terminal(n,res->id,res->run_id,t->stop_intent?JOB_STOPPED:
                     res->state==COMPLETED?JOB_COMPLETE:JOB_FAILED,&res->usage,res->reason)) return 1;
         t->final_queued=1;
+        t->result_end=queued_end(n);
         log_line("WORKER","Job %d: %s",res->id,res->reason);
         return 1;
     }
     // Output/checkpoint/result socket se flush hone ke baad hi files aur pin chhodna.
-    if(transport_wants_write(&n->trans)) return 1;
+    if(n->tx_sent<t->result_end) return 1;
     remove_task(n,t);
     return 0;
+}
+
+static void heartbeat(struct worker_node *n,uint64_t now)
+{
+    struct run_job *j;
+    unsigned char buf[8+256*40];
+    size_t count=0,off=8;
+    double load=0;
+    if(now-n->heartbeat<2000) return;
+    if(getloadavg(&load,1)!=1) load=0;
+    load=load*100.0/n->cfg.capacity.cores; if(load>100) load=100; if(load<0) load=0;
+    for(j=n->loop.runner.head;j&&count<256;j=j->next){
+        if(j->reaped||j->exec_state!=RUN_START_OK||!j->start_reported) continue;
+        worker_p32(buf+off,(uint32_t)j->id); worker_p32(buf+off+4,(uint32_t)j->run_id);
+        worker_p64(buf+off+8,(uint64_t)j->usage.ram); worker_p64(buf+off+16,(uint64_t)j->usage.peak_ram);
+        worker_p64(buf+off+24,j->usage.faults); worker_p64(buf+off+32,(uint64_t)(j->usage.cpu_time*1000));
+        count++; off+=40;
+    }
+    worker_p32(buf,(uint32_t)(load*100)); worker_p32(buf+4,(uint32_t)count);
+    if(!worker_send(n,WORKER_HEARTBEAT,buf,off)) n->heartbeat=now;
 }
 
 void worker_tick(struct worker_loop *loop,uint64_t now,void *arg)
@@ -291,11 +323,11 @@ void worker_tick(struct worker_loop *loop,uint64_t now,void *arg)
     struct worker_node *n=arg;
     struct run_job *j;
     struct worker_task *t;
-    unsigned char buf[8+256*40];
-    size_t count=0,off=8;
-    double load=0;
     if(n->lost){ worker_loop_stop(loop); return; }
     if(!n->worker_id){ if(now-n->registered_ms>10000){ n->lost=1; worker_loop_stop(loop); } return; }
+    // Liveness/drain control pehle, cache inventory aur bade checkpoint baad mein.
+    if(n->draining&&!n->drain_sent){ if(!worker_send(n,WORKER_DRAIN,NULL,0)) n->drain_sent=1; }
+    heartbeat(n,now);
     struct worker_cache_entry *entry;
     size_t sent=0;
     for(entry=n->cache.head;entry&&sent<16;entry=entry->next){
@@ -305,7 +337,6 @@ void worker_tick(struct worker_loop *loop,uint64_t now,void *arg)
         if(worker_send(n,WORKER_CACHE,inventory,strlen(entry->key)+1)) break;
         entry->reported=1; sent++;
     }
-    if(n->draining&&!n->drain_sent){ if(!worker_send(n,WORKER_DRAIN,NULL,0)) n->drain_sent=1; }
     if(n->draining){
         struct worker_task *next;
         struct telemetry zero={0};
@@ -318,19 +349,6 @@ void worker_tick(struct worker_loop *loop,uint64_t now,void *arg)
     for(j=loop->runner.head;j;j=j->next){
         t=task(n,j->id,j->run_id,0);
         if(t&&!t->final_queued&&!t->files_removed) checkpoint(n,t,j,now,0);
-    }
-    if(now-n->heartbeat>=2000){
-        if(getloadavg(&load,1)!=1) load=0;
-        load=load*100.0/n->cfg.capacity.cores; if(load>100) load=100; if(load<0) load=0;
-        for(j=loop->runner.head;j&&count<256;j=j->next){
-            if(j->reaped||j->exec_state!=RUN_START_OK||!j->start_reported) continue;
-            worker_p32(buf+off,(uint32_t)j->id); worker_p32(buf+off+4,(uint32_t)j->run_id);
-            worker_p64(buf+off+8,(uint64_t)j->usage.ram); worker_p64(buf+off+16,(uint64_t)j->usage.peak_ram);
-            worker_p64(buf+off+24,j->usage.faults); worker_p64(buf+off+32,(uint64_t)(j->usage.cpu_time*1000));
-            count++; off+=40;
-        }
-        worker_p32(buf,(uint32_t)(load*100)); worker_p32(buf+4,(uint32_t)count);
-        if(!worker_send(n,WORKER_HEARTBEAT,buf,off)) n->heartbeat=now;
     }
     if(n->draining&&n->drain_sent&&!n->tasks&&!loop->runner.head&&!transport_wants_write(&n->trans)) worker_loop_stop(loop);
     for(t=n->tasks;t;t=t->next)

@@ -8,6 +8,7 @@
 struct worker_task {
     int id,assigned,pinned,stop_intent,final_queued,restore_seen,cache_wait,files_removed;
     uint64_t run,created,cp_seq,cp_ms,out_offset;
+    uint64_t output_end,checkpoint_end,result_end;
     char key[CONTENT_LEN],path[PATH_LEN];
     unsigned char *restore,*last_state;
     size_t restore_size,last_size;
@@ -23,6 +24,7 @@ struct worker_node {
     struct worker_task *tasks;
     int fd,worker_id,lost,draining,drain_sent;
     uint64_t heartbeat,registered_ms;
+    uint64_t tx_sent;
     char admin[32];
     size_t admin_len;
 };

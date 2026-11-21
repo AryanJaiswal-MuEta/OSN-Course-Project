@@ -15,6 +15,33 @@ static void put(struct worker_cache *c,const char *key,const char *data,int id)
     CHECK(worker_cache_write(&t,0,data,strlen(data))==0);
     CHECK(worker_cache_end(c,&t,path,sizeof(path))==0);
 }
+
+static void large_duplicate(void)
+{
+    char dir[]="/tmp/osn_cache_bytes_XXXXXX",path[PATH_LEN],lock[PATH_LEN];
+    unsigned char data[16421];
+    struct worker_cache c;
+    struct cache_transfer t={.fd=-1};
+    memset(data,0x5a,sizeof(data));
+    CHECK(mkdtemp(dir)!=NULL&&worker_cache_init(&c,dir,65536)==0);
+    CHECK(worker_cache_begin(&c,&t,"large",sizeof(data),10,1)==0);
+    CHECK(worker_cache_write(&t,0,data,100)==0);
+    CHECK(worker_cache_write(&t,100,data+100,sizeof(data)-100)==0);
+    CHECK(worker_cache_end(&c,&t,path,sizeof(path))==0);
+    CHECK(worker_cache_begin(&c,&t,"large",sizeof(data),11,1)==0);
+    CHECK(worker_cache_write(&t,0,data,sizeof(data))==0);
+    CHECK(worker_cache_end(&c,&t,path,sizeof(path))==0);
+    CHECK(c.size==sizeof(data));
+    data[16384]^=1;
+    CHECK(worker_cache_begin(&c,&t,"large",sizeof(data),12,1)==0);
+    CHECK(worker_cache_write(&t,0,data,sizeof(data))==0);
+    CHECK(worker_cache_end(&c,&t,path,sizeof(path))<0);
+    worker_cache_abort(&c,&t);
+    worker_cache_unpin(&c,"large"); worker_cache_unpin(&c,"large");
+    CHECK(unlink(path)==0);
+    worker_cache_free(&c);
+    snprintf(lock,sizeof(lock),"%s/.lock",dir); CHECK(unlink(lock)==0&&rmdir(dir)==0);
+}
 int main(void)
 {
     char dir[]="/tmp/osn_cache_test_XXXXXX",path[PATH_LEN],lock[PATH_LEN];
@@ -47,6 +74,7 @@ int main(void)
     CHECK(unlink(path)==0); worker_cache_unpin(&c,"C");
     worker_cache_free(&c);
     snprintf(lock,sizeof(lock),"%s/.lock",dir); CHECK(unlink(lock)==0); CHECK(rmdir(dir)==0);
+    large_duplicate();
     printf("PASS cache LRU, pinning, collision, traversal, restart, missing file: %d checks\n",checks);
     return 0;
 }

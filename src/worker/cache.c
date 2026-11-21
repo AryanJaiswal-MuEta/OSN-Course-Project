@@ -159,12 +159,40 @@ int worker_cache_write(struct cache_transfer *t,uint64_t off,const void *buf,siz
     t->received+=size;
     return 0;
 }
+
+static int same_bytes(int fd,int old,uint64_t size)
+{
+    unsigned char a[16384],b[16384];
+    unsigned char *buf[2]={a,b};
+    int fds[2]={fd,old},i;
+    struct stat st;
+    uint64_t off;
+    size_t count,done;
+    ssize_t n;
+    for(i=0;i<2;i++)
+        if(fstat(fds[i],&st)<0||!S_ISREG(st.st_mode)||st.st_size<0||(uint64_t)st.st_size!=size) return 0;
+    for(off=0;off<size;off+=count){
+        count=size-off>sizeof(a)?sizeof(a):(size_t)(size-off);
+        for(i=0;i<2;i++){
+            done=0;
+            while(done<count){
+                n=pread(fds[i],buf[i]+done,count-done,(off_t)(off+done));
+                if(n<0&&errno==EINTR) continue;
+                if(n<=0) return 0;
+                done+=(size_t)n;
+            }
+        }
+        // Short read / signal ko content mismatch samajh ke healthy session
+        // disconnect nahi karna. Dono complete chunks ke bytes compare karo.
+        if(memcmp(a,b,count)) return 0;
+    }
+    return 1;
+}
+
 int worker_cache_end(struct worker_cache *c,struct cache_transfer *t,char *path,size_t cap)
 {
     struct worker_cache_entry *p;
-    unsigned char a[16384],b[16384];
-    ssize_t n,m;
-    int fd,old,err=-1;
+    int fd,old,err;
     if(t->fd<0||t->received!=t->size) return -1;
     if(close(t->fd)<0){ t->fd=-1; return -1; } t->fd=-1;
     p=find(c,t->key);
@@ -183,12 +211,8 @@ int worker_cache_end(struct worker_cache *c,struct cache_transfer *t,char *path,
             goto pinned;
         }
         if(fd<0||old<0){ if(fd>=0) close(fd); if(old>=0) close(old); return -1; }
-        do { n=read(fd,a,sizeof(a)); m=read(old,b,sizeof(b));
-            if(n<0||m!=n||(n>0&&memcmp(a,b,(size_t)n))) goto compared;
-        }while(n>0);
-        err=0;
-compared:
-        close(fd); close(old); if(err) return -1;
+        err=same_bytes(fd,old,t->size);
+        close(fd); close(old); if(!err) return -1;
         unlinkat(c->fd,t->temp,0);
     }else{
         if(t->size>UINT64_MAX-c->size) return -1;

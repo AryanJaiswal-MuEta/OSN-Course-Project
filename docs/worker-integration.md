@@ -1,5 +1,7 @@
 # Member 2 worker handoff — 21 November 2026
 
+**22 November follow-up:** [final worker check](member2-final.md) covers per-execution flush barriers, control-message priority, confirmed-exec LRU updates and added regressions.
+
 The production worker now executes assignments and speaks the Member 1 scheduler protocol. This branch is based on the Member 1 scheduler-completion commit; the final team repository needs both sets of changes.
 
 ```sh
@@ -66,7 +68,7 @@ Tests cover existing runner, limits, privileges, output/backpressure and start a
 
 Real scheduler/worker tests run both one-worker migration fallback and two-worker migration to another worker on the same Linux host. They exercise discovery, submission through a protocol client, real fork/exec, heartbeats, checkpoint handoff and completion with zero retry charge. They use a shared local executable path; production scheduler full-byte/cache-reference selection remains Member 3's artifact-service integration. Protocol fixtures separately prove the worker's actual transfer receive path.
 
-Linux normal and root execution are tested. macOS source paths exist but still need a Mac run, as do real multi-machine/hotspot tests. Member 3's production client/cron/follow/executable service is still absent; `make all` still expects the missing client main. This worker handoff does not claim the whole course project is submission-ready.
+Linux normal and root execution are tested. macOS source paths exist but still need a Mac run, as do real multi-machine/hotspot tests. Member 3 has since supplied a basic client main, so all three executables build. The audited client/follow/cron/artifact-service gaps still prevent declaring the whole project submission-ready.
 
 Verified on WSL Ubuntu: `make -B test test-worker test-worker-discovery`, worker suites under AddressSanitizer/UndefinedBehaviorSanitizer (`-fno-pie`/`-no-pie` on Linux), and root runs of the runner driver and real-worker network tests. Cache/config/loop/runner/start unit groups have 35/63/55/50/45 checks. The runner driver covers 13 execution/limit/cleanup scenarios. Child workload fixtures deliberately compile without sanitizer instrumentation so their requested address-space limits remain meaningful; the supervising worker and scheduler were instrumented.
 
