@@ -87,7 +87,7 @@ static int randomized_streams(void) {
             input.type = exp->type;
             input.request_id = exp->request_id;
             input.payload_len = exp->len;
-            input.payload = exp->len ? (const char *)exp->data : NULL;
+            input.payload = exp->len ? exp->data : NULL;
             if (protocol_encode(&input, stream + stream_size,
                                 sizeof stream - stream_size, &written) != PROTOCOL_COMPLETE) {
                 fprintf(stderr, "FAIL encoding round %u message %zu\n", round, i);
@@ -138,7 +138,7 @@ static int randomized_streams(void) {
 static int invalid_frames(void) {
     unsigned char frame[PROTOCOL_HEADER_SIZE + 8];
     const unsigned char payload[] = {0x00, 0x80, 0xFF, 0x7F};
-    struct protocol_message input = {WORKER_REGISTER, 0xFFFFFFFFu, (const char *)payload, sizeof payload};
+    struct protocol_message input = {WORKER_REGISTER, 0xFFFFFFFFu, payload, sizeof payload};
     struct protocol_message output = {0};
     struct protocol_decode decoder;
     size_t written = 0;
